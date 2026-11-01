@@ -1,5 +1,6 @@
 {% extends "farm_console/base.html" %}
 {% block title %}{{ folder.name }}{% endblock %}
+{% block refresh %}<meta http-equiv="refresh" content="60">{% endblock %}
 {% block content %}
 <h1>{{ folder.name }}</h1>
 {% if message %}<div class="msg">{{ message }}</div>{% endif %}

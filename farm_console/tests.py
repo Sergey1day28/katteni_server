@@ -62,6 +62,8 @@ class ConsoleTests(TestCase):
         Account.objects.create(email='poor@x.com', balance=10)
         response = self.client.get('/farm/accounts/')
         self.assertContains(response, 'a@b.com')
+        self.assertContains(response, 'http-equiv="refresh"')
+        self.assertContains(response, 'content="60"')
         self.assertNotContains(response, 'EA id')
         self.assertNotContains(response, '>Бан<')
         self.assertNotContains(response, '<th>Имя</th>')
@@ -137,6 +139,7 @@ class ConsoleTests(TestCase):
         response = self.client.get('/farm/errors/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Ошибки за 7 дней')
+        self.assertNotContains(response, 'http-equiv="refresh"')
 
     def test_все_экраны_пульта_открываются(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())
