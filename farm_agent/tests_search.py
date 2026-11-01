@@ -6,6 +6,15 @@ from farm_agent.search import find_shortcut
 
 
 class SearchTests(unittest.TestCase):
+    def test_ярлык_email_тире_chrome(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            target = root / 'koluchiylosos@gmail.com - Chrome.lnk'
+            target.write_text('', encoding='utf-8')
+            result = find_shortcut(root, 'koluchiylosos@gmail.com')
+            self.assertEqual(result.path, target)
+            self.assertIsNone(result.error)
+
     def test_один_файл_в_корне(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

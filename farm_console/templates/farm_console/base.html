@@ -76,9 +76,10 @@
     th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: #141822; }
     tr:last-child td { border-bottom: 0; }
     tbody tr:hover td { background: #1c2230; }
-    .ok, .warn { font-weight: 600; }
+    .ok, .warn, .danger { font-weight: 600; }
     .ok { color: var(--ok); }
     .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
     .badge {
       display: inline-block;
       padding: 1px 8px;
@@ -141,6 +142,70 @@
     .login-card form p { margin: 0 0 12px; }
     .login-card input { width: 100%; margin-top: 4px; }
     .login-card button { width: 100%; margin-top: 8px; }
+    .modes-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 340px) 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    @media (max-width: 920px) {
+      .modes-layout { grid-template-columns: 1fr; }
+    }
+    .mode-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 8px;
+    }
+    .mode-row label { color: var(--text); }
+    .mode-row input[type="number"] { width: 72px; }
+    .mode-conditions {
+      margin: 8px 0 0 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .mode-conditions:disabled { opacity: .45; }
+    .modes-foot {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      gap: 8px;
+      padding: 12px 0 4px;
+      background: var(--bg);
+    }
+    .modes-tree { margin: 0; padding-left: 18px; }
+    .modes-tree li { margin: 0 0 4px; }
+    .filter-add { margin: 8px 0 12px; }
+    .filter-add summary {
+      display: inline-block;
+      padding: 7px 12px;
+      cursor: pointer;
+      background: #232a38;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .filter-add summary:hover { background: #2c3446; }
+    .filter-picker {
+      margin: 10px 0 0;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .filter-chip {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .filter-chip span { color: var(--text); }
+    .filter-chip-x {
+      width: 28px;
+      padding: 2px 0;
+      line-height: 1;
+      background: transparent;
+    }
+    {% block extra_style %}{% endblock %}
   </style>
 </head>
 <body class="{% block body_class %}{% endblock %}">

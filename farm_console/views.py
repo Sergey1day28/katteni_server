@@ -1,10 +1,12 @@
 import json
+import logging
 from datetime import timedelta
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
 from django.db.models import Count, Q
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
@@ -12,21 +14,26 @@ from django.views.decorators.http import require_http_methods, require_POST
 from farm_core.agent_queue import enqueue_open, enqueue_stop_chrome
 from farm_core.circle import continue_folder, start_folder, stop_run
 from farm_core.folder_filter import (
-    FILTER_FIELDS,
-    FILTER_OPS,
+    ACCOUNT_FILTER_PRESETS,
+    FILTER_PRESETS,
+    OPEN_RULES,
+    accounts_for_start,
+    conditions_from_keys,
     default_filter,
-    evaluate_folder,
     filter_template,
+    folder_accounts,
+    replace_members,
+    search_accounts,
 )
 from farm_core.csv_import import import_csv
 from farm_core.legacy_import import import_legacy
+from farm_core.mode_catalog import editor_state, modes_from_post, modes_preview, modes_to_text
 from farm_core.mode_labels import parse_modes_text
 from farm_core.models import (
     Account,
     AgentCommand,
     DailyMetric,
     Folder,
-    FolderManual,
     FolderRun,
     ImportReport,
     MarketFilter,
@@ -42,9 +49,11 @@ from farm_core.models import (
     SnipeSettingsDoc,
     Worker,
 )
-from farm_core.sbc import clear_assignment, clear_set_assignments
+from farm_core.sbc import attach_week_sbc, clear_assignment, clear_set_assignments
 from farm_core.workers import ensure_configured_worker
 from farm_site.settings import LOCAL_SETTINGS_PATH, load_local_settings
+
+logger = logging.getLogger(__name__)
 
 
 def login_view(request):
@@ -119,78 +128,110 @@ def folder_page(request, folder_id):
         action = request.POST.get('action')
         if action == 'save':
             folder.name = request.POST.get('name') or folder.name
-            folder.play_mode = request.POST.get('play_mode') or 'SBCmode'
             folder.open_at_a_time = int(request.POST.get('open_at_a_time') or 1)
-            folder.refresh_on_start = request.POST.get('refresh_on_start') == '1'
-            folder.kill_chrome_before_scheduled = request.POST.get('kill_chrome_before_scheduled') == '1'
+            folder.assign_sbc = request.POST.get('assign_sbc') == '1'
             folder.order = request.POST.get('order') or 'email'
-            folder.modes_text = request.POST.get('modes_text') or ''
-            folder.modes = [
-                {'key': item['key'], 'value': item['value']}
-                for item in parse_modes_text(folder.modes_text)
-            ]
-            folder.filter = _read_filter(request)
-            set_id = request.POST.get('sbc_set_id') or ''
-            folder.sbc_set = SbcSet.objects.filter(id=set_id).first() if set_id else None
+            folder.open_rule = request.POST.get('open_rule') or 'all'
             folder.save()
             message = 'Папка сохранена'
-        elif action == 'template':
-            applied = filter_template(
-                request.POST.get('template') or '',
-                request.POST.get('template_extra') or '',
-            )
-            if applied is None:
-                message = 'Шаблон не применён: нужно имя СБЧ или число'
-            else:
-                folder.filter = applied
-                folder.save(update_fields=['filter'])
-                message = 'Шаблон фильтра записан'
         elif action in ('start', 'continue', 'stop'):
             message = _run_action(folder, action, request.user.username)
-        elif action == 'include':
-            account = Account.objects.filter(id=request.POST.get('account_id')).first()
-            if account:
-                FolderManual.objects.update_or_create(
-                    folder=folder,
-                    account=account,
-                    defaults={'kind': FolderManual.KIND_INCLUDE},
-                )
-                message = 'Добавлен вручную'
-        elif action == 'exclude':
-            account = Account.objects.filter(id=request.POST.get('account_id')).first()
-            if account:
-                FolderManual.objects.update_or_create(
-                    folder=folder,
-                    account=account,
-                    defaults={'kind': FolderManual.KIND_EXCLUDE},
-                )
-                message = 'Исключён вручную'
-        elif action == 'clear_manual':
-            FolderManual.objects.filter(
-                folder=folder,
-                id=request.POST.get('manual_id'),
-            ).delete()
-            message = 'Ручная пометка снята'
-    selected, missing = evaluate_folder(folder)
+        elif action == 'add_selected':
+            ids = request.POST.getlist('account_id')
+            picked = list(Account.objects.filter(id__in=ids).order_by('email', 'id'))
+            replace_members(folder, picked)
+            logger.info(
+                'Состав папки %s заменён: %s',
+                folder.name,
+                [account.email for account in picked],
+            )
+            message = 'В папку добавлено: %s' % len(picked)
+        elif action == 'remove_member':
+            folder.members.filter(account_id=request.POST.get('account_id')).delete()
+            message = 'Аккаунт снят с папки'
+        elif action == 'clear_members':
+            count = folder.members.count()
+            folder.members.all().delete()
+            logger.info('Состав папки %s очищен: снято %s', folder.name, count)
+            message = 'Снято с папки: %s' % count
+    members = folder_accounts(folder)
+    ready, missing_ready = accounts_for_start(folder)
+    found, missing, searched = _load_found(request, folder.id)
     run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).first()
     entries = list(run.entries.select_related('account', 'last_command').order_by('position')) if run else []
-    manuals = list(folder.manuals.select_related('account').order_by('kind', 'account__email'))
     recent_runs = list(folder.runs.order_by('-started_at')[:10])
     return render(request, 'farm_console/folder.html', {
         'folder': folder,
-        'accounts': selected,
+        'members': members,
+        'ready': ready,
+        'found': found,
         'missing': missing,
+        'missing_ready': missing_ready,
         'run': run,
         'entries': entries,
-        'sets': SbcSet.objects.all(),
-        'all_accounts': Account.objects.order_by('email'),
-        'manuals': manuals,
         'recent_runs': recent_runs,
         'message': message,
-        'parsed_modes': parse_modes_text(folder.modes_text),
-        'filter_fields': FILTER_FIELDS,
-        'filter_ops': FILTER_OPS,
-        'filter_rows': folder.filter or [],
+        'modes_preview': modes_preview(folder.modes),
+        'filter_presets': FILTER_PRESETS,
+        'searched': searched,
+        'open_rules': OPEN_RULES,
+    })
+
+
+@login_required
+@require_POST
+def folder_search(request, folder_id):
+    folder = get_object_or_404(Folder, id=folder_id)
+    email_query = (request.POST.get('email') or '').strip()
+    keys = request.POST.getlist('filter_key')
+    if email_query:
+        conditions = conditions_from_keys(['email'], {'email': email_query})
+        source = 'email'
+    elif keys:
+        extras = {}
+        fallback = (request.POST.get('filter_extra') or '').strip()
+        for key in keys:
+            extras[key] = (request.POST.get('extra_%s' % key) or fallback).strip()
+        conditions = conditions_from_keys(keys, extras)
+        source = 'filter'
+    else:
+        return HttpResponse(status=204)
+    if not conditions:
+        return HttpResponse(status=204)
+    found, missing = search_accounts(conditions)
+    _store_found(request, folder.id, found, missing)
+    logger.info(
+        'Поиск папки %s: %s %s, найдено %s',
+        folder.name,
+        source,
+        email_query or keys,
+        len(found),
+    )
+    return render(request, 'farm_console/folder_found.html', {
+        'folder': folder,
+        'found': found,
+        'missing': missing,
+        'searched': True,
+    })
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def folder_modes_page(request, folder_id):
+    folder = get_object_or_404(Folder, id=folder_id)
+    if request.method == 'POST':
+        folder.modes = modes_from_post(request.POST)
+        folder.modes_text = modes_to_text(folder.modes)
+        folder.save(update_fields=['modes', 'modes_text'])
+        logger.info(
+            'Моды папки %s записаны: %s',
+            folder.name,
+            [item['key'] for item in folder.modes],
+        )
+        return redirect('farm-folder', folder_id=folder.id)
+    return render(request, 'farm_console/folder_modes.html', {
+        'folder': folder,
+        'editor': editor_state(folder.modes),
     })
 
 
@@ -292,19 +333,80 @@ def pc_page(request):
 
 @login_required
 def accounts_page(request):
-    query = (request.GET.get('q') or '').strip()
-    accounts = Account.objects.all()
-    if query:
-        found = Account.objects.filter(email__icontains=query) | Account.objects.filter(
-            name__icontains=query
-        )
-        if query.isdigit():
-            found = found | Account.objects.filter(ea_account_id=int(query))
-        accounts = found.distinct()
-    accounts = accounts.order_by('-balance', 'email')
+    accounts = attach_week_sbc(list(Account.objects.all().order_by('-balance', 'email')[:300]))
     return render(request, 'farm_console/accounts.html', {
-        'accounts': accounts[:300],
-        'query': query,
+        'found': accounts,
+        'missing': 0,
+        'searched': False,
+        'filter_presets': ACCOUNT_FILTER_PRESETS,
+    })
+
+
+@login_required
+@require_POST
+def accounts_search(request):
+    email_query = (request.POST.get('email') or '').strip()
+    keys = request.POST.getlist('filter_key')
+    if email_query:
+        conditions = conditions_from_keys(['email'], {'email': email_query})
+        source = 'email'
+    elif keys:
+        extras = {}
+        fallback = (request.POST.get('filter_extra') or '').strip()
+        for key in keys:
+            extras[key] = (request.POST.get('extra_%s' % key) or fallback).strip()
+        conditions = conditions_from_keys(keys, extras)
+        source = 'filter'
+    else:
+        return HttpResponse(status=204)
+    if not conditions:
+        return HttpResponse(status=204)
+    found, missing = search_accounts(conditions)
+    found.sort(key=lambda account: ((account.email or ''), account.id))
+    attach_week_sbc(found)
+    logger.info(
+        'Поиск аккаунтов: %s %s, найдено %s',
+        source,
+        email_query or keys,
+        len(found),
+    )
+    return render(request, 'farm_console/accounts_found.html', {
+        'found': found,
+        'missing': missing,
+        'searched': True,
+    })
+
+
+@login_required
+@require_POST
+def accounts_open(request):
+    worker = Worker.objects.filter(enabled=True).order_by('id').first()
+    if worker is None:
+        return JsonResponse({'ok': False, 'message': 'ПК выключен'})
+    raw_ids = request.POST.getlist('account_id')
+    ids = []
+    for value in raw_ids:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    by_id = {account.id: account for account in Account.objects.filter(id__in=ids)}
+    opened = []
+    for account_id in ids:
+        account = by_id.get(account_id)
+        if account is None:
+            continue
+        email = (account.email or '').strip()
+        if not email:
+            continue
+        enqueue_open(worker, email)
+        opened.append(email)
+    if not opened:
+        return JsonResponse({'ok': False, 'message': 'Нет email для открытия'})
+    logger.info('Открытие аккаунтов с пульта: %s', opened)
+    return JsonResponse({
+        'ok': True,
+        'message': 'Команда open поставлена: %s' % ', '.join(opened),
     })
 
 
@@ -506,7 +608,8 @@ def _run_action(folder, action, username):
 
 
 def _folder_row(folder):
-    selected, missing = evaluate_folder(folder)
+    members = folder_accounts(folder)
+    ready, missing = accounts_for_start(folder)
     run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).first()
     progress = _progress(run) if run else None
     now = timezone.now()
@@ -527,7 +630,8 @@ def _folder_row(folder):
     schedule = folder.schedules.filter(enabled=True).order_by('start_time').first()
     return {
         'folder': folder,
-        'count': len(selected),
+        'count': len(members),
+        'ready': len(ready),
         'missing': missing,
         'run': run,
         'progress': progress,
@@ -651,23 +755,31 @@ def _result_text(result):
     return error.get('message') or 'Отказ'
 
 
-def _read_filter(request):
-    fields = request.POST.getlist('filter_field')
-    ops = request.POST.getlist('filter_op')
-    values = request.POST.getlist('filter_value')
-    conditions = []
-    for field, op, value in zip(fields, ops, values):
-        if not field:
-            continue
-        parsed = value
-        if value in ('true', 'True'):
-            parsed = True
-        elif value in ('false', 'False'):
-            parsed = False
-        elif value.isdigit() or (value.startswith('-') and value[1:].isdigit()):
-            parsed = int(value)
-        conditions.append({'field': field, 'op': op, 'value': parsed})
-    return conditions
+def _found_session_key(folder_id):
+    return 'folder_found_%s' % folder_id
+
+
+def _store_found(request, folder_id, found, missing):
+    request.session[_found_session_key(folder_id)] = {
+        'ids': [account.id for account in found],
+        'missing': missing,
+    }
+
+
+def _load_found(request, folder_id):
+    snap = request.session.get(_found_session_key(folder_id))
+    if not snap:
+        return [], 0, False
+    ids = snap.get('ids') or []
+    missing = snap.get('missing') or 0
+    if not ids:
+        return [], missing, True
+    by_id = {
+        account.id: account
+        for account in Account.objects.filter(id__in=ids)
+    }
+    found = [by_id[item] for item in ids if item in by_id]
+    return found, missing, True
 
 
 def _read_days(request):

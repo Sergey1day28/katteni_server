@@ -26,4 +26,4 @@ class AgentCommandAdmin(admin.ModelAdmin):
 
 @admin.register(Folder)
 class FolderAdmin(admin.ModelAdmin):
-    list_display = ('name', 'open_at_a_time', 'play_mode')
+    list_display = ('name', 'open_at_a_time', 'open_rule')

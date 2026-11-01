@@ -6,7 +6,6 @@ from django.utils import timezone
 from farm_core.models import (
     Account,
     DailyMetric,
-    FolderManual,
     FolderMember,
     FolderRun,
     RunEntry,
@@ -16,35 +15,35 @@ from farm_core.models import (
 )
 
 
+OPEN_RULE_ALL = 'all'
+OPEN_RULE_SNIPE = 'unfinished_snipe'
+OPEN_RULE_SBC = 'uncollected_sbc'
+
+OPEN_RULES = [
+    {'key': OPEN_RULE_ALL, 'title': 'Всех из списка'},
+    {'key': OPEN_RULE_SNIPE, 'title': 'Не закончили снайп'},
+    {'key': OPEN_RULE_SBC, 'title': 'Не собрали СБЧ'},
+]
+
+OPEN_RULE_FILTERS = {
+    OPEN_RULE_SNIPE: [{'field': 'market_searches_today', 'op': 'lt', 'value': 350}],
+    OPEN_RULE_SBC: [{'field': 'has_sbc_set', 'op': 'eq', 'value': True}],
+}
+
+
 def default_filter():
     return []
 
 
-def evaluate_folder(folder, now=None):
+def match_accounts(conditions, accounts=None, now=None):
     now = now or timezone.now()
+    if accounts is None:
+        accounts = list(Account.objects.all())
+    if not conditions:
+        return list(accounts), 0
     selected = []
     missing = 0
-    accounts = list(Account.objects.all())
-    include_ids = set(
-        FolderManual.objects.filter(folder=folder, kind=FolderManual.KIND_INCLUDE).values_list(
-            'account_id', flat=True
-        )
-    )
-    exclude_ids = set(
-        FolderManual.objects.filter(folder=folder, kind=FolderManual.KIND_EXCLUDE).values_list(
-            'account_id', flat=True
-        )
-    )
-    conditions = list(folder.filter or [])
     for account in accounts:
-        if account.id in exclude_ids:
-            continue
-        if account.id in include_ids:
-            selected.append(account)
-            continue
-        if not conditions:
-            selected.append(account)
-            continue
         matched, has_data = _match_all(account, conditions, now)
         if not has_data:
             missing += 1
@@ -52,6 +51,53 @@ def evaluate_folder(folder, now=None):
         if matched:
             selected.append(account)
     return selected, missing
+
+
+def search_accounts(conditions, now=None):
+    if not conditions:
+        return [], 0
+    return match_accounts(conditions, now=now)
+
+
+def evaluate_folder(folder, now=None):
+    return search_accounts(folder.filter or [], now=now)
+
+
+def folder_accounts(folder):
+    return [
+        member.account
+        for member in folder.members.select_related('account').order_by('account__email', 'account_id')
+    ]
+
+
+def replace_members(folder, accounts):
+    FolderMember.objects.filter(folder=folder).delete()
+    now = timezone.now()
+    seen = set()
+    rows = []
+    for account in accounts:
+        if account.id in seen:
+            continue
+        seen.add(account.id)
+        rows.append(
+            FolderMember(
+                folder=folder,
+                account=account,
+                source='picked',
+                snapshot_at=now,
+            )
+        )
+    FolderMember.objects.bulk_create(rows)
+    return folder_accounts(folder)
+
+
+def accounts_for_start(folder, now=None):
+    members = folder_accounts(folder)
+    rule = folder.open_rule or OPEN_RULE_ALL
+    conditions = OPEN_RULE_FILTERS.get(rule)
+    if not conditions:
+        return members, 0
+    return match_accounts(conditions, accounts=members, now=now)
 
 
 def accounts_in_other_active_run(account_ids, except_run=None):
@@ -101,6 +147,12 @@ def _compare(actual, op, value):
         return actual > value
     if op == 'gte':
         return actual >= value
+    if op == 'contains':
+        needle = str(value or '').strip().lower()
+        hay = str(actual or '').lower()
+        if not needle:
+            return False
+        return needle in hay
     return False
 
 
@@ -123,6 +175,11 @@ def _read_has_email(account, now, value):
     del now, value
     email = (account.email or '').strip()
     return bool(email) and email.lower() != 'none', True
+
+
+def _read_email(account, now, value):
+    del now, value
+    return (account.email or '').strip(), True
 
 
 def _read_linked(account, now, value):
@@ -284,6 +341,7 @@ FIELD_READERS = {
     'snipe_allowed': _read_snipe_allowed,
     'balance': _read_balance,
     'has_email': _read_has_email,
+    'email': _read_email,
     'linked': _read_linked,
     'market_open': _read_market_open,
     'market_searches_today': _read_market_today,
@@ -301,6 +359,7 @@ FILTER_FIELDS = [
     {'key': 'snipe_allowed', 'title': 'снайп разрешён'},
     {'key': 'balance', 'title': 'баланс'},
     {'key': 'has_email', 'title': 'есть email'},
+    {'key': 'email', 'title': 'email'},
     {'key': 'linked', 'title': 'связывался с сервером'},
     {'key': 'market_open', 'title': 'рынок открыт'},
     {'key': 'market_searches_today', 'title': 'запросы рынка сегодня'},
@@ -322,12 +381,26 @@ FILTER_OPS = [
     ('gte', '≥'),
 ]
 
+FILTER_PRESETS = [
+    {'key': 'unlinked', 'title': 'Не связывался'},
+    {'key': 'market_open', 'title': 'Рынок открыт'},
+]
+
+ACCOUNT_FILTER_PRESETS = FILTER_PRESETS + [
+    {'key': 'sbc_assigned', 'title': 'Не собрали СБЧ'},
+]
+
 
 def filter_template(name, extra=''):
     if name == 'unlinked':
         return [{'field': 'linked', 'op': 'eq', 'value': False}]
     if name == 'market_open':
         return [{'field': 'market_open', 'op': 'eq', 'value': True}]
+    if name == 'email':
+        text = (extra or '').strip()
+        if not text:
+            return None
+        return [{'field': 'email', 'op': 'contains', 'value': text}]
     if name == 'snipe':
         return [{'field': 'market_searches_today', 'op': 'lt', 'value': 350}]
     if name == 'sbc_assigned':
@@ -348,4 +421,71 @@ def filter_template(name, extra=''):
             limit = 3
         return [{'field': 'nonpriority_collected_lt', 'op': 'lt', 'value': limit}]
     return None
+
+
+def conditions_from_keys(keys, extras=None):
+    extras = extras or {}
+    result = []
+    for key in keys or []:
+        extra = extras.get(key) or ''
+        added = filter_template(key, extra)
+        if added is None:
+            continue
+        for item in added:
+            if item not in result:
+                result.append(item)
+    return result
+
+
+def append_filter(existing, name, extra=''):
+    added = filter_template(name, extra)
+    if added is None:
+        return None
+    result = list(existing or [])
+    for item in added:
+        if item not in result:
+            result.append(item)
+    return result
+
+
+def drop_filter(existing, index):
+    result = list(existing or [])
+    if 0 <= index < len(result):
+        result.pop(index)
+    return result
+
+
+def describe_filters(conditions):
+    rows = []
+    for index, item in enumerate(conditions or []):
+        field = item.get('field')
+        value = item.get('value')
+        title, value_text = _describe_condition(field, value)
+        rows.append({
+            'index': index,
+            'title': title,
+            'value_text': value_text,
+        })
+    return rows
+
+
+def _describe_condition(field, value):
+    if field == 'linked':
+        return ('Не связывался' if value is False else 'Связывался', '')
+    if field == 'market_open':
+        return ('Рынок открыт' if value else 'Рынок закрыт', '')
+    if field == 'email':
+        return ('По email', '' if value in (None, True, False) else str(value))
+    if field == 'preview_pack_older_hours':
+        return ('Добрать паки', '')
+    if field == 'priority_sbc_uncollected':
+        return ('Не собрал приоритет', '')
+    if field == 'sbc_name_uncollected':
+        return ('Не собрал СБЧ', '' if value in (None, True, False) else str(value))
+    if field == 'nonpriority_collected_lt':
+        return ('Неприоритет меньше', '' if value in (None, True, False) else str(value))
+    title = next((item['title'] for item in FILTER_FIELDS if item['key'] == field), field)
+    if value in (None, True, False):
+        return (title, '')
+    return (title, str(value))
 

@@ -1,7 +1,9 @@
+from datetime import timedelta
+
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from farm_core.models import SbcAssignment, SbcAttempt
+from farm_core.models import SbcAssignment, SbcAttempt, SbcSet
 
 
 def clear_assignment(account):
@@ -18,6 +20,10 @@ def clear_set_assignments(sbc_set):
         sbc_set=sbc_set,
         state=SbcAssignment.STATE_ACTIVE,
     ).update(state=SbcAssignment.STATE_FINISHED, finished_at=now)
+
+
+def default_sbc_set():
+    return SbcSet.objects.filter(common=True).first() or SbcSet.objects.order_by('id').first()
 
 
 def assign_set(account, sbc_set, run=None):
@@ -65,3 +71,38 @@ def record_attempt(
     except IntegrityError:
         existing = SbcAttempt.objects.get(client_event_id=client_event_id)
         return existing, False
+
+
+def attach_week_sbc(accounts, now=None):
+    now = now or timezone.now()
+    week = now - timedelta(days=7)
+    ids = [account.id for account in accounts]
+    names = {}
+    for assignment in (
+        SbcAssignment.objects.filter(
+            account_id__in=ids,
+            state=SbcAssignment.STATE_ACTIVE,
+        ).select_related('sbc_set')
+    ):
+        names[assignment.account_id] = assignment.sbc_set.name
+    last_by_name = {}
+    tried = {}
+    for attempt in SbcAttempt.objects.filter(
+        account_id__in=ids,
+        occurred_at__gte=week,
+    ).order_by('occurred_at', 'id'):
+        tried[attempt.account_id] = tried.get(attempt.account_id, 0) + 1
+        last_by_name[(attempt.account_id, attempt.sbc_name)] = attempt.outcome
+    collected = {}
+    failed = {}
+    for (account_id, sbc_name), outcome in last_by_name.items():
+        if outcome == SbcAttempt.OUTCOME_COLLECTED:
+            collected.setdefault(account_id, []).append(sbc_name)
+        elif outcome == SbcAttempt.OUTCOME_FAILED:
+            failed.setdefault(account_id, []).append(sbc_name)
+    for account in accounts:
+        account.sbc_set_name = names.get(account.id) or ''
+        account.sbc_tried = tried.get(account.id, 0)
+        account.sbc_collected = collected.get(account.id, [])
+        account.sbc_failed = failed.get(account.id, [])
+    return accounts

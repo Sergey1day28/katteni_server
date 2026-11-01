@@ -7,11 +7,20 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 
-from farm_core.models import Account, Folder, MarketFilter, SbcAssignment, SbcSet
+from farm_core.models import (
+    Account,
+    AgentCommand,
+    Folder,
+    MarketFilter,
+    SbcAssignment,
+    SbcAttempt,
+    SbcSet,
+    Worker,
+)
 from farm_core.folder_filter import default_filter
 from farm_core.tokens import hash_token
-from farm_core.models import Worker
 
 
 class ConsoleTests(TestCase):
@@ -62,11 +71,26 @@ class ConsoleTests(TestCase):
         Account.objects.create(email='poor@x.com', balance=10)
         response = self.client.get('/farm/accounts/')
         self.assertContains(response, 'a@b.com')
-        self.assertContains(response, 'http-equiv="refresh"')
-        self.assertContains(response, 'content="60"')
+        self.assertNotContains(response, 'http-equiv="refresh"')
         self.assertNotContains(response, 'EA id')
         self.assertNotContains(response, '>Бан<')
         self.assertNotContains(response, '<th>Имя</th>')
+        self.assertContains(response, '>Фильтр<')
+        self.assertContains(response, 'data-filter-key="unlinked"')
+        self.assertContains(response, 'data-filter-key="market_open"')
+        self.assertContains(response, 'data-filter-key="sbc_assigned"')
+        self.assertContains(response, 'Не собрали СБЧ')
+        self.assertContains(response, 'id="email-query"')
+        self.assertContains(response, 'id="email-search"')
+        self.assertContains(response, 'рынок нет данных')
+        self.assertContains(response, 'набор не назначен')
+        self.assertContains(response, 'Открыть')
+        self.assertContains(response, 'Открыть выбранные')
+        self.assertContains(response, 'data-open-url')
+        self.assertNotContains(response, 'data-filter-key="preview"')
+        self.assertNotContains(response, 'data-filter-key="priority"')
+        self.assertNotContains(response, 'data-filter-key="sbc_name"')
+        self.assertNotContains(response, 'data-filter-key="nonpriority"')
         html = response.content.decode('utf-8')
         self.assertLess(html.index('rich@x.com'), html.index('poor@x.com'))
         self.assertLess(html.index('poor@x.com'), html.index('a@b.com'))
@@ -79,30 +103,230 @@ class ConsoleTests(TestCase):
 
     def test_главный_экран_запускает_круг(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter(), open_at_a_time=1)
+        account = Account.objects.get(email='a@b.com')
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(account.id)},
+        )
         response = self.client.post('/farm/', {'action': 'start', 'folder_id': str(folder.id)})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'команд')
         self.assertTrue(folder.runs.exists())
 
-    def test_шаблон_не_связывался_пишет_фильтр(self):
-        folder = Folder.objects.create(name='Свои', filter=default_filter())
-        response = self.client.post(
-            '/farm/folders/%s/' % folder.id,
-            {'action': 'template', 'template': 'unlinked'},
+    def test_лимит_запросов_не_неизвестный_мод(self):
+        Folder.objects.create(
+            name='test',
+            filter=default_filter(),
+            modes=[{'key': 'За  часа можно сделать запросов', 'value': '24650'}],
+            modes_text='За 24 часа можно сделать запросов650+',
         )
-        self.assertEqual(response.status_code, 200)
-        folder.refresh_from_db()
-        self.assertEqual(folder.filter, [{'field': 'linked', 'op': 'eq', 'value': False}])
+        response = self.client.get('/farm/')
+        self.assertContains(response, 'test')
+        self.assertNotContains(response, 'неизвестный мод')
 
-    def test_шаблон_приоритета_пишет_фильтр(self):
+    def test_поиск_и_добавить_прикрепляет_аккаунты(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())
-        response = self.client.post(
+        account = Account.objects.get(email='a@b.com')
+        account.market_open = True
+        account.save(update_fields=['market_open'])
+        found = self.client.post(
+            '/farm/folders/%s/search/' % folder.id,
+            {'filter_key': 'market_open'},
+        )
+        self.assertEqual(found.status_code, 200)
+        self.assertContains(found, 'Выбрать все')
+        self.assertContains(found, 'a@b.com')
+        folder.refresh_from_db()
+        self.assertEqual(folder.filter, default_filter())
+        page = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertContains(page, 'Выбрать все')
+        self.assertContains(page, 'a@b.com')
+        self.assertContains(page, 'Кого открывать')
+        add = self.client.post(
             '/farm/folders/%s/' % folder.id,
-            {'action': 'template', 'template': 'priority'},
+            {'action': 'add_selected', 'account_id': str(account.id)},
+        )
+        self.assertEqual(add.status_code, 200)
+        self.assertEqual(
+            list(folder.members.values_list('account__email', flat=True)),
+            ['a@b.com'],
+        )
+        self.assertContains(add, 'В папке')
+        self.assertContains(add, 'рынок открыт')
+        self.assertNotContains(add, 'без бана')
+        self.assertContains(add, 'Снять все')
+
+    def test_снять_все_очищает_папку(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        account = Account.objects.get(email='a@b.com')
+        account.ban = True
+        account.market_open = False
+        account.save(update_fields=['ban', 'market_open'])
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(account.id)},
+        )
+        page = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertContains(page, 'рынок не открыт')
+        self.assertContains(page, 'аккаунт забанен')
+        self.assertNotContains(page, 'без бана')
+        cleared = self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'clear_members'},
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(folder.members.count(), 0)
+        self.assertContains(cleared, 'список пуст')
+
+    def test_экран_папки_фильтр_локальный(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        page = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertContains(page, '>Фильтр<')
+        self.assertContains(page, 'Искать')
+        self.assertContains(page, 'data-filter-key="unlinked"')
+        self.assertContains(page, 'data-filter-key="market_open"')
+        self.assertContains(page, 'id="email-query"')
+        self.assertContains(page, 'id="email-search"')
+        self.assertNotContains(page, 'data-filter-key="email"')
+        self.assertNotContains(page, 'data-filter-key="preview"')
+        self.assertNotContains(page, 'data-filter-key="priority"')
+        self.assertNotContains(page, 'data-filter-key="sbc_assigned"')
+        self.assertNotContains(page, 'data-filter-key="sbc_name"')
+        self.assertNotContains(page, 'data-filter-key="nonpriority"')
+        self.assertNotContains(page, 'Добрать паки')
+        self.assertNotContains(page, 'Не собрал приоритет')
+        self.assertNotContains(page, 'Добавить фильтр')
+        self.assertNotContains(page, 'Сбросить фильтры')
+        self.assertNotContains(page, 'name="filter_field"')
+        self.assertNotContains(page, 'name="filter_op"')
+        self.assertNotContains(page, 'name="add_filter"')
+
+    def test_поиск_по_email(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        Account.objects.create(email='other@x.com')
+        found = self.client.post(
+            '/farm/folders/%s/search/' % folder.id,
+            {'email': 'a@b', 'filter_key': 'market_open'},
+        )
+        self.assertEqual(found.status_code, 200)
+        self.assertContains(found, 'a@b.com')
+        self.assertNotContains(found, 'other@x.com')
+        self.assertContains(found, 'рынок нет данных')
+        self.assertNotContains(found, 'без бана')
+
+    def test_пустой_поиск_не_меняет_найденных(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        account = Account.objects.get(email='a@b.com')
+        account.market_open = True
+        account.save(update_fields=['market_open'])
+        self.client.post(
+            '/farm/folders/%s/search/' % folder.id,
+            {'filter_key': 'market_open'},
+        )
+        empty = self.client.post('/farm/folders/%s/search/' % folder.id, {})
+        self.assertEqual(empty.status_code, 204)
+        page = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertContains(page, 'a@b.com')
+        self.assertContains(page, 'Выбрать все')
+
+    def test_поиск_аккаунтов_не_собрали_сбч(self):
+        assigned = Account.objects.get(email='a@b.com')
+        assigned.market_open = True
+        assigned.save(update_fields=['market_open'])
+        Account.objects.create(email='other@x.com')
+        sbc_set = SbcSet.objects.create(name='Общий')
+        SbcAssignment.objects.create(account=assigned, sbc_set=sbc_set)
+        now = timezone.now()
+        SbcAttempt.objects.create(
+            account=assigned,
+            client_event_id='e1',
+            sbc_name='Gold Upgrade',
+            outcome=SbcAttempt.OUTCOME_FAILED,
+            occurred_at=now,
+            priority=True,
+        )
+        SbcAttempt.objects.create(
+            account=assigned,
+            client_event_id='e2',
+            sbc_name='83 Rated',
+            outcome=SbcAttempt.OUTCOME_COLLECTED,
+            occurred_at=now,
+        )
+        found = self.client.post(
+            '/farm/accounts/search/',
+            {'filter_key': 'sbc_assigned'},
+        )
+        self.assertEqual(found.status_code, 200)
+        self.assertContains(found, 'a@b.com')
+        self.assertNotContains(found, 'other@x.com')
+        self.assertContains(found, 'Общий')
+        self.assertContains(found, 'попыток 2')
+        self.assertContains(found, 'Gold Upgrade')
+        self.assertContains(found, '83 Rated')
+        self.assertContains(found, 'сданы')
+        self.assertContains(found, 'не сданы')
+        self.assertContains(found, 'рынок открыт')
+
+    def test_поиск_аккаунтов_по_email(self):
+        Account.objects.create(email='other@x.com')
+        found = self.client.post(
+            '/farm/accounts/search/',
+            {'email': 'a@b', 'filter_key': 'sbc_assigned'},
+        )
+        self.assertEqual(found.status_code, 200)
+        self.assertContains(found, 'a@b.com')
+        self.assertNotContains(found, 'other@x.com')
+        self.assertContains(found, 'рынок нет данных')
+        self.assertContains(found, 'набор не назначен')
+
+    def test_пустой_поиск_аккаунтов_не_меняет_список(self):
+        empty = self.client.post('/farm/accounts/search/', {})
+        self.assertEqual(empty.status_code, 204)
+
+    def test_открытие_аккаунта_с_пульта(self):
+        account = Account.objects.get(email='a@b.com')
+        response = self.client.post(
+            '/farm/accounts/open/',
+            {'account_id': str(account.id)},
         )
         self.assertEqual(response.status_code, 200)
-        folder.refresh_from_db()
-        self.assertEqual(folder.filter[-1]['field'], 'priority_sbc_uncollected')
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertIn('a@b.com', body['message'])
+        commands = list(AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN))
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].email, 'a@b.com')
+        self.assertIsNone(commands[0].run_id)
+        self.assertFalse(
+            AgentCommand.objects.filter(action=AgentCommand.ACTION_STOP).exists()
+        )
+
+    def test_открытие_выбранных_аккаунтов(self):
+        first = Account.objects.get(email='a@b.com')
+        other = Account.objects.create(email='other@x.com')
+        response = self.client.post('/farm/accounts/open/', {
+            'account_id': [str(first.id), str(other.id)],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        emails = list(
+            AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN)
+            .values_list('email', flat=True)
+        )
+        self.assertEqual(sorted(emails), ['a@b.com', 'other@x.com'])
+
+    def test_открытие_при_выключенном_пк(self):
+        Worker.objects.update(enabled=False)
+        account = Account.objects.get(email='a@b.com')
+        response = self.client.post(
+            '/farm/accounts/open/',
+            {'account_id': str(account.id)},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body['ok'])
+        self.assertIn('ПК выключен', body['message'])
+        self.assertFalse(AgentCommand.objects.exists())
 
     def test_карточка_снимает_назначение_сбч(self):
         account = Account.objects.get(email='a@b.com')
@@ -147,6 +371,7 @@ class ConsoleTests(TestCase):
         pages = [
             '/farm/',
             '/farm/folders/%s/' % folder.id,
+            '/farm/folders/%s/modes/' % folder.id,
             '/farm/schedule/',
             '/farm/pc/',
             '/farm/accounts/',
@@ -159,6 +384,82 @@ class ConsoleTests(TestCase):
         for url in pages:
             response = self.client.get(url)
             self.assertEqual(response.status_code, 200, url)
+
+    def test_карточка_папки_без_автообновления_и_textarea(self):
+        folder = Folder.objects.create(
+            name='Свои',
+            filter=default_filter(),
+            modes=[{'key': 'collectSBC', 'value': None}],
+            modes_text='Собрать СБЧ+',
+        )
+        response = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'http-equiv="refresh"')
+        self.assertNotContains(response, 'name="modes_text"')
+        self.assertNotContains(response, 'name="play_mode"')
+        self.assertNotContains(response, 'SBCmode')
+        self.assertNotContains(response, 'Набор СБЧ')
+        self.assertNotContains(response, 'Гасить Chrome')
+        self.assertContains(response, 'Распространить СБЧ на аккаунты')
+        self.assertContains(response, 'Редактировать моды')
+        self.assertContains(response, 'Собрать СБЧ')
+        self.assertContains(response, '/farm/folders/%s/modes/' % folder.id)
+
+    def test_сохранение_папки_не_затирает_моды(self):
+        folder = Folder.objects.create(
+            name='Свои',
+            filter=default_filter(),
+            modes=[{'key': 'collectSBC', 'value': None}],
+            modes_text='Собрать СБЧ+',
+        )
+        response = self.client.post('/farm/folders/%s/' % folder.id, {
+            'action': 'save',
+            'name': 'Свои',
+            'open_at_a_time': '1',
+            'order': 'email',
+            'assign_sbc': '1',
+        })
+        self.assertEqual(response.status_code, 200)
+        folder.refresh_from_db()
+        self.assertEqual(folder.modes, [{'key': 'collectSBC', 'value': None}])
+        self.assertTrue(folder.assign_sbc)
+
+    def test_экран_модов_пишет_очередь(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        page = self.client.get('/farm/folders/%s/modes/' % folder.id)
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, 'http-equiv="refresh"')
+        self.assertContains(page, 'Собрать СБЧ')
+        self.assertContains(page, 'Собрать все сбч')
+        self.assertNotContains(page, 'не выбран')
+        self.assertContains(page, 'Открыть паки')
+        response = self.client.post('/farm/folders/%s/modes/' % folder.id, {
+            'mode_collectSBC': '1',
+            'mode_useBronze200ForSbc': '1',
+            'mode_openPacks': '1',
+            'mode_openTradablePacks': '1',
+            'mode_openBronzePacksFromStore': '1',
+            'mode_value_openBronzePacksFromStore': '1',
+            'mode_startSnipe': '1',
+            'mode_resetRequests': '1',
+            'mode_value_resetRequests': '3',
+            'mode_requests24hours': '1',
+            'mode_value_requests24hours': '650',
+            'mode_freeAccountSolving': '1',
+            'mode_firstLoginToWeb': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        folder.refresh_from_db()
+        keys = [item['key'] for item in folder.modes]
+        self.assertEqual(keys[0], 'firstLoginToWeb')
+        self.assertEqual(keys[-1], 'freeAccountSolving')
+        self.assertIn('collectAllSbc', keys)
+        self.assertIn('openBronzePacksFromStore', keys)
+        self.assertEqual(
+            [item['value'] for item in folder.modes if item['key'] == 'resetRequests'][0],
+            3,
+        )
+        self.assertIn('Собрать СБЧ+', folder.modes_text)
 
     def test_импорт_csv_с_экрана(self):
         page = self.client.get('/farm/import/')

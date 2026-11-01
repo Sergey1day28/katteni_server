@@ -2,15 +2,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from farm_core.agent_queue import cancel_pending, enqueue_open, enqueue_stop_chrome
-from farm_core.folder_filter import accounts_in_other_active_run, evaluate_folder
+from farm_core.folder_filter import accounts_for_start, accounts_in_other_active_run
 from farm_core.models import (
     AgentCommand,
-    FolderMember,
     FolderRun,
     NotifyOutbox,
     RunEntry,
 )
-from farm_core.sbc import assign_set
+from farm_core.sbc import assign_set, default_sbc_set
 from farm_core.workers import ensure_configured_worker
 
 
@@ -46,7 +45,6 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
             open_at_a_time=folder.open_at_a_time,
             started_by=started_by,
         )
-        _snapshot_members(folder, ready, now)
         entries = []
         for index, account in enumerate(_ordered(ready, folder.order)):
             entries.append(
@@ -58,10 +56,11 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
                     state=RunEntry.STATE_WAITING,
                 )
             )
-            if folder.sbc_set_id:
-                assign_set(account, folder.sbc_set, run=run)
-        if kill_chrome or folder.kill_chrome_before_scheduled:
-            enqueue_stop_chrome(worker, run=run)
+            if folder.assign_sbc:
+                sbc_set = default_sbc_set()
+                if sbc_set is not None:
+                    assign_set(account, sbc_set, run=run)
+        enqueue_stop_chrome(worker, run=run)
         opened = _queue_next(run, worker, folder.open_at_a_time)
     return {
         'ok': True,
@@ -208,20 +207,7 @@ def on_command_finished(command):
 
 
 def _members_for_start(folder, now):
-    if folder.refresh_on_start or not folder.members.exists():
-        return evaluate_folder(folder, now=now)
-    accounts = [member.account for member in folder.members.select_related('account')]
-    return accounts, 0
-
-
-def _snapshot_members(folder, accounts, now):
-    FolderMember.objects.filter(folder=folder).delete()
-    FolderMember.objects.bulk_create(
-        [
-            FolderMember(folder=folder, account=account, source='filter', snapshot_at=now)
-            for account in accounts
-        ]
-    )
+    return accounts_for_start(folder, now=now)
 
 
 def _ordered(accounts, order):

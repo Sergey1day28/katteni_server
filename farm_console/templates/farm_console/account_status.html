@@ -1,0 +1,1 @@
+{{ account.email|default:account.name }} ({% if account.market_open == True %}<span class="ok">рынок открыт</span>{% elif account.market_open == False %}<span class="warn">рынок не открыт</span>{% else %} рынок нет данных{% endif %}){% if account.ban %} <span class="danger">аккаунт забанен</span>{% endif %}

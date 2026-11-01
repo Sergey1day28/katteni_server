@@ -1,0 +1,81 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Моды · {{ folder.name }}{% endblock %}
+{% block content %}
+<h1>Моды · {{ folder.name }}</h1>
+<p><a href="{% url 'farm-folder' folder.id %}">К папке</a></p>
+<form method="post" id="modes-form">
+  {% csrf_token %}
+  <div class="modes-layout">
+    <div class="card">
+      <h2>Сессия</h2>
+      {% for item in editor.session %}
+      <p class="mode-row">
+        <label>
+          <input type="checkbox" name="mode_{{ item.key }}" value="1"{% if item.checked %} checked{% endif %}>
+          {{ item.title }}
+        </label>
+        {% if item.needs_value %}
+        <input type="number" name="mode_value_{{ item.key }}" value="{{ item.value|default_if_none:'' }}" min="0">
+        {% endif %}
+      </p>
+      {% endfor %}
+    </div>
+    <div>
+      <h2>Очередь</h2>
+      {% for action in editor.actions %}
+      <div class="card" data-action-card>
+        <p class="mode-row">
+          <label>
+            <input type="checkbox" name="mode_{{ action.key }}" value="1" data-action-toggle{% if action.checked %} checked{% endif %}>
+            <strong>{{ action.title }}</strong>
+          </label>
+          {% if action.needs_value %}
+          <input type="number" name="mode_value_{{ action.key }}" value="{{ action.value|default_if_none:'' }}" min="0">
+          {% endif %}
+        </p>
+        {% if action.scope or action.conditions %}
+        <fieldset class="mode-conditions" data-conditions{% if not action.checked %} disabled{% endif %}>
+          {% if action.scope %}
+          <p class="mode-row">
+            {% for option in editor.scope_options %}
+            <label><input type="radio" name="sbc_scope" value="{{ option.value }}"{% if editor.sbc_scope == option.value %} checked{% endif %}> {{ option.title }}</label>
+            {% endfor %}
+          </p>
+          {% endif %}
+          {% for item in action.conditions %}
+          <p class="mode-row">
+            <label>
+              <input type="checkbox" name="mode_{{ item.key }}" value="1"{% if item.checked %} checked{% endif %}>
+              {{ item.title }}
+            </label>
+            {% if item.needs_value %}
+            <input type="number" name="mode_value_{{ item.key }}" value="{{ item.value|default_if_none:'' }}" min="0">
+            {% endif %}
+          </p>
+          {% endfor %}
+        </fieldset>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="modes-foot">
+    <a href="{% url 'farm-folder' folder.id %}"><button type="button">Отмена</button></a>
+    <button type="submit" class="btn-primary">ОК</button>
+  </div>
+</form>
+<script>
+(function () {
+  function syncCards() {
+    document.querySelectorAll('[data-action-card]').forEach(function (card) {
+      var toggle = card.querySelector('[data-action-toggle]');
+      var box = card.querySelector('[data-conditions]');
+      if (!toggle || !box) return;
+      box.disabled = !toggle.checked;
+    });
+  }
+  document.getElementById('modes-form').addEventListener('change', syncCards);
+  syncCards();
+})();
+</script>
+{% endblock %}

@@ -1,16 +1,20 @@
+import io
 import json
 import tempfile
 import unittest
+from logging import StreamHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.request import Request
 
+from farm_agent.__main__ import log_handlers
 from farm_agent.client import AgentClient
 from farm_agent.journal import CommandJournal
-from farm_agent.launch import Launcher
+from farm_agent.launch import Launcher, window_rect
 from farm_agent.lock import InstanceLock
 from farm_agent.loop import AgentLoop
 from farm_agent.search import find_shortcut
-from farm_agent.settings import AgentSettings, load_settings
+from farm_agent.settings import AgentSettings, desktop_dir, load_settings
 from farm_agent.stop import ChromeStopper
 
 
@@ -39,14 +43,6 @@ class FakeClient:
         self.results.append((command_id, state, error_text))
 
 
-class FakeProcess:
-    def __init__(self, code):
-        self._code = code
-
-    def poll(self):
-        return self._code
-
-
 class AgentUnitTests(unittest.TestCase):
     def test_журнал_помнит_итог(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -67,24 +63,39 @@ class AgentUnitTests(unittest.TestCase):
             self.assertTrue(second.acquire())
             second.release()
 
-    def test_запуск_ненулевой_код_это_ошибка(self):
+    def test_запуск_ярлыка_через_startfile(self):
         calls = []
+        restores = []
 
-        def fake_popen(command):
-            calls.append(command)
-            return FakeProcess(1)
+        def fake_start(path, show_cmd=None):
+            calls.append((path, show_cmd))
 
-        launcher = Launcher(popen=fake_popen, sleep=lambda _sec: None)
-        ok, text = launcher.open_file('D:\\a.lnk')
-        self.assertFalse(ok)
-        self.assertEqual(text, 'код 1')
-        self.assertEqual(calls[0][:2], ['cmd', '/c'])
-
-    def test_запуск_процесс_жив_это_успех(self):
-        launcher = Launcher(popen=lambda _command: FakeProcess(None), sleep=lambda _sec: None)
-        ok, text = launcher.open_file('D:\\a.lnk')
+        launcher = Launcher(
+            start=fake_start,
+            sleep=lambda _sec: None,
+            restore_chrome=lambda before: restores.append(before),
+            list_chrome=lambda: {7},
+        )
+        ok, text = launcher.open_file(r'D:\mail@x.com - Chrome.lnk')
         self.assertTrue(ok)
         self.assertEqual(text, '')
+        self.assertEqual(calls, [(r'D:\mail@x.com - Chrome.lnk', 1)])
+        self.assertEqual(restores[0], {7})
+        self.assertEqual(len(restores), 6)
+
+    def test_окно_центр_1024(self):
+        self.assertEqual(window_rect(1920, 1080), (448, 156, 1024, 768))
+        self.assertEqual(window_rect(800, 600), (0, 0, 800, 600))
+
+    def test_запуск_ошибка_startfile(self):
+        def fake_start(path, show_cmd=None):
+            del path, show_cmd
+            raise OSError(2, 'не найден')
+
+        launcher = Launcher(start=fake_start, sleep=lambda _sec: None)
+        ok, text = launcher.open_file(r'D:\a.lnk')
+        self.assertFalse(ok)
+        self.assertIn('не найден', text)
 
     def test_стоп_коды_0_и_128(self):
         for code in (0, 128):
@@ -106,26 +117,68 @@ class AgentUnitTests(unittest.TestCase):
             return FakeHttp(json.dumps({'ok': True, 'data': {'commands': []}}))
 
         client = AgentClient('http://127.0.0.1:8000', 'secret', opener=fake_open)
-        client.poll('pc-1', '1')
+        payload = client.poll('pc-1', '1')
         self.assertTrue(seen['url'].endswith('/agent/v1/poll'))
         self.assertEqual(seen['token'], 'secret')
+        self.assertEqual(payload.get('commands'), [])
         self.assertIsInstance(Request('http://example'), Request)
 
-    def test_настройки_спрашивают_каталог_один_раз(self):
+    def test_клиент_достаёт_data(self):
+        def fake_open(request, timeout=20):
+            del request, timeout
+            return FakeHttp(json.dumps({
+                'ok': True,
+                'data': {
+                    'commands': [{'id': '1', 'action': 'open', 'email': 'a@b.com'}],
+                    'poll_after_sec': 4,
+                },
+            }))
+
+        client = AgentClient('http://127.0.0.1:8000', 'secret', opener=fake_open)
+        payload = client.poll('pc-1', '1')
+        self.assertEqual(payload['commands'][0]['email'], 'a@b.com')
+        self.assertEqual(payload['poll_after_sec'], 4)
+
+    def test_лог_без_консоли_только_файл(self):
+        with tempfile.TemporaryDirectory() as raw:
+            log_path = str(Path(raw) / 'agent.log')
+            handlers = log_handlers(log_path, stdout=None)
+            self.assertEqual(len(handlers), 1)
+            self.assertIsInstance(handlers[0], RotatingFileHandler)
+            for handler in handlers:
+                handler.close()
+
+    def test_лог_с_консолью_два_обработчика(self):
+        with tempfile.TemporaryDirectory() as raw:
+            log_path = str(Path(raw) / 'agent.log')
+            handlers = log_handlers(log_path, stdout=io.StringIO())
+            kinds = [type(handler) for handler in handlers]
+            self.assertEqual(len(handlers), 2)
+            self.assertIn(StreamHandler, kinds)
+            for handler in handlers:
+                handler.close()
+
+    def test_пустой_каталог_это_рабочий_стол(self):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / 'farm_agent.local.json'
-            asked = []
-
-            def ask(_prompt):
-                asked.append(True)
-                return 'D:\\profiles'
-
-            first = load_settings(path, ask_profiles_dir=ask)
-            second = load_settings(path, ask_profiles_dir=ask)
-            self.assertEqual(first.profiles_dir, 'D:\\profiles')
-            self.assertEqual(second.profiles_dir, 'D:\\profiles')
-            self.assertEqual(len(asked), 1)
+            desktop = Path(raw) / 'Desktop'
+            desktop.mkdir()
+            settings = load_settings(path, resolve_desktop=lambda: desktop)
+            self.assertEqual(Path(settings.profiles_dir), desktop)
+            settings.save()
+            saved = json.loads(path.read_text(encoding='utf-8'))
+            self.assertEqual(saved.get('profiles_dir') or '', '')
+            self.assertTrue(desktop_dir().is_absolute())
             self.assertIsInstance(AgentSettings({}, path).worker_id, str)
+
+    def test_явный_каталог_не_подменяем_столом(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / 'farm_agent.local.json'
+            path.write_text(json.dumps({'profiles_dir': 'D:\\profiles'}), encoding='utf-8')
+            desktop = Path(raw) / 'Desktop'
+            desktop.mkdir()
+            settings = load_settings(path, resolve_desktop=lambda: desktop)
+            self.assertEqual(settings.profiles_dir, 'D:\\profiles')
 
     def test_цикл_open_успех_и_повтор_без_запуска(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -198,7 +251,7 @@ class AgentUnitTests(unittest.TestCase):
             settings=FakeSettings('.'),
             client=BrokenClient(),
             find_shortcut=find_shortcut,
-            launcher=Launcher(popen=lambda _c: FakeProcess(None), sleep=lambda _s: None),
+            launcher=Launcher(start=lambda _path, show_cmd=None: None, sleep=lambda _s: None),
             stopper=ChromeStopper(run=lambda _c, **_k: type('R', (), {'returncode': 0})()),
             journal=CommandJournal(Path(tempfile.gettempdir()) / 'unused-journal.json'),
             sleeper=sleeper,

@@ -1,6 +1,5 @@
 {% extends "farm_console/base.html" %}
 {% block title %}{{ folder.name }}{% endblock %}
-{% block refresh %}<meta http-equiv="refresh" content="60">{% endblock %}
 {% block content %}
 <h1>{{ folder.name }}</h1>
 {% if message %}<div class="msg">{{ message }}</div>{% endif %}
@@ -10,7 +9,6 @@
   <input type="hidden" name="action" value="save">
   <div class="row">
     <label>Имя <input name="name" value="{{ folder.name }}"></label>
-    <label>Режим <input name="play_mode" value="{{ folder.play_mode }}"></label>
     <label>Открывать сразу <input name="open_at_a_time" value="{{ folder.open_at_a_time }}" size="4"></label>
     <label>Порядок
       <select name="order">
@@ -19,134 +17,96 @@
       </select>
     </label>
   </div>
-  <p><label><input type="checkbox" name="refresh_on_start" value="1" {% if folder.refresh_on_start %}checked{% endif %}> Пересчитывать состав при старте</label></p>
-  <p><label><input type="checkbox" name="kill_chrome_before_scheduled" value="1" {% if folder.kill_chrome_before_scheduled %}checked{% endif %}> Гасить Chrome перед кругом по расписанию</label></p>
-  <p><label>Набор СБЧ
-    <select name="sbc_set_id">
-      <option value="">нет</option>
-      {% for set in sets %}
-      <option value="{{ set.id }}" {% if folder.sbc_set_id == set.id %}selected{% endif %}>{{ set.name }}</option>
-      {% endfor %}
-    </select>
-  </label></p>
-  <p class="muted">Фильтр (поле / оператор / значение):</p>
-  {% for cond in filter_rows %}
+  <p><label><input type="checkbox" name="assign_sbc" value="1" {% if folder.assign_sbc %}checked{% endif %}> Распространить СБЧ на аккаунты</label></p>
+  <p class="muted">Кого открывать</p>
   <p class="row">
-    <select name="filter_field">
-      {% for field in filter_fields %}
-      <option value="{{ field.key }}"{% if cond.field == field.key %} selected{% endif %}>{{ field.title }}</option>
-      {% endfor %}
-    </select>
-    <select name="filter_op">
-      {% for op, label in filter_ops %}
-      <option value="{{ op }}"{% if cond.op == op %} selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input name="filter_value" value="{{ cond.value }}">
+    {% for rule in open_rules %}
+    <label>
+      <input type="radio" name="open_rule" value="{{ rule.key }}"{% if folder.open_rule == rule.key %} checked{% endif %}>
+      {{ rule.title }}
+    </label>
+    {% endfor %}
   </p>
-  {% empty %}
-  <p class="row">
-    <select name="filter_field">
-      {% for field in filter_fields %}
-      <option value="{{ field.key }}">{{ field.title }}</option>
-      {% endfor %}
-    </select>
-    <select name="filter_op">
-      {% for op, label in filter_ops %}
-      <option value="{{ op }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input name="filter_value">
-  </p>
-  {% endfor %}
-  <p class="row">
-    <select name="filter_field">
-      <option value=""></option>
-      {% for field in filter_fields %}
-      <option value="{{ field.key }}">{{ field.title }}</option>
-      {% endfor %}
-    </select>
-    <select name="filter_op">
-      {% for op, label in filter_ops %}
-      <option value="{{ op }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input name="filter_value" placeholder="ещё условие">
-  </p>
-  <p><label>Моды, по строке<textarea name="modes_text" rows="8" cols="80">{{ folder.modes_text }}</textarea></label></p>
   <button type="submit" class="btn-primary">Сохранить</button>
 </form>
 </div>
 <div class="card">
-<form method="post">
+  <div class="row">
+    <strong>Моды</strong>
+    <a href="{% url 'farm-folder-modes' folder.id %}">Редактировать моды</a>
+  </div>
+  {% if modes_preview.session or modes_preview.actions %}
+    {% if modes_preview.session %}
+      <p class="muted">Сессия</p>
+      <ul class="modes-tree">
+        {% for item in modes_preview.session %}
+        <li>{{ item.title }}{% if item.value != None %} {{ item.value }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% for action in modes_preview.actions %}
+      <p><strong>{{ action.title }}{% if action.value != None %} {{ action.value }}{% endif %}</strong></p>
+      {% if action.conditions %}
+      <ul class="modes-tree">
+        {% for item in action.conditions %}
+        <li>{{ item.title }}{% if item.value != None %} {{ item.value }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    <p class="muted">модов нет</p>
+  {% endif %}
+</div>
+<div class="card" id="folder-search" data-search-url="{% url 'farm-folder-search' folder.id %}">
   {% csrf_token %}
-  <input type="hidden" name="action" value="template">
-  <p class="muted">Шаблоны</p>
-  <p>
-    <button name="template" value="unlinked">Не связывался</button>
-    <button name="template" value="market_open">Рынок открыт</button>
-    <button name="template" value="snipe">Добрать снайп</button>
-    <button name="template" value="sbc_assigned">Добрать СБЧ</button>
-    <button name="template" value="preview">Добрать паки</button>
-    <button name="template" value="priority">Не собрал приоритет</button>
+  <p class="muted">Поиск</p>
+  <ul class="list" id="filter-chips"></ul>
+  <p class="row">
+    <details class="filter-add">
+      <summary>Фильтр</summary>
+      <div class="filter-picker">
+        {% for item in filter_presets %}
+          <button type="button" data-filter-key="{{ item.key }}" data-filter-title="{{ item.title }}">{{ item.title }}</button>
+        {% endfor %}
+      </div>
+    </details>
+    <button type="button" class="btn-primary" id="filter-search">Искать</button>
   </p>
   <p class="row">
-    <input name="template_extra" placeholder="имя СБЧ или число N">
-    <button name="template" value="sbc_name">Не собрал СБЧ X</button>
-    <button name="template" value="nonpriority">Неприоритет меньше N</button>
+    <input id="email-query" placeholder="email" size="32">
+    <button type="button" id="email-search">Искать</button>
   </p>
-</form>
+  <div id="folder-found">
+    {% include "farm_console/folder_found.html" %}
+  </div>
 </div>
-<p>Разбор модов:
-{% for mode in parsed_modes %}
-  <span class="chip">{{ mode.key }}{% if mode.value %}={{ mode.value }}{% endif %}{% if mode.unknown %} <span class="warn">(неизвестный)</span>{% endif %}</span>
-{% empty %}нет{% endfor %}
-</p>
-<p>Сейчас подходит: <strong>{{ accounts|length }}</strong>, без данных: {% if missing %}<span class="warn">{{ missing }}</span>{% else %}0{% endif %}</p>
-<ul class="list">
-  {% for account in accounts %}
-  <li>
-    <a href="{% url 'farm-account' account.id %}">{{ account.email|default:account.name }}</a>
+<div class="card">
+  <p class="row">
+    <strong>В папке</strong> {{ members|length }}, к открытию сейчас: {{ ready|length }}{% if missing_ready %}, без данных: <span class="warn">{{ missing_ready }}</span>{% endif %}
+    {% if members %}
     <form method="post">{% csrf_token %}
-      <input type="hidden" name="account_id" value="{{ account.id }}">
-      <button class="btn-ghost" name="action" value="exclude">убрать</button>
+      <button class="btn-ghost" name="action" value="clear_members">Снять все</button>
     </form>
-  </li>
-  {% endfor %}
-</ul>
-<form method="post" class="toolbar">
-  {% csrf_token %}
-  <select name="account_id">
-    {% for account in all_accounts %}
-    <option value="{{ account.id }}">{{ account.email|default:account.name }}</option>
-    {% endfor %}
-  </select>
-  <button name="action" value="include">Добавить руками</button>
-  <button name="action" value="exclude">Исключить руками</button>
-</form>
-{% if manuals %}
-<h2>Ручной список</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Email</th><th>Вид</th><th></th></tr>
-  {% for item in manuals %}
-  <tr>
-    <td>{{ item.account.email }}</td>
-    <td>{{ item.kind }}</td>
-    <td>
+    {% endif %}
+  </p>
+  <ul class="list">
+    {% for account in members %}
+    <li>
+      <a href="{% url 'farm-account' account.id %}">{% include "farm_console/account_status.html" %}</a>
       <form method="post">{% csrf_token %}
-        <input type="hidden" name="manual_id" value="{{ item.id }}">
-        <button class="btn-ghost" name="action" value="clear_manual">снять</button>
+        <input type="hidden" name="account_id" value="{{ account.id }}">
+        <button class="btn-ghost" name="action" value="remove_member">снять</button>
       </form>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+    </li>
+    {% empty %}
+    <li class="muted">список пуст — найдите аккаунты и нажмите Добавить</li>
+    {% endfor %}
+  </ul>
 </div>
-{% endif %}
 <form method="post" class="toolbar">
   {% csrf_token %}
-  <button class="btn-primary" name="action" value="start">Запустить ({{ accounts|length }})</button>
+  <button class="btn-primary" name="action" value="start">Запустить ({{ ready|length }})</button>
   <button name="action" value="continue">Продолжить</button>
   <button class="btn-danger" name="action" value="stop">Остановить</button>
 </form>
@@ -184,4 +144,121 @@
   {% endfor %}
 </table>
 </div>
+<script>
+(function () {
+  var root = document.getElementById('folder-search');
+  if (!root) return;
+  var chips = [];
+  var list = document.getElementById('filter-chips');
+  var foundBox = document.getElementById('folder-found');
+  var token = root.querySelector('input[name="csrfmiddlewaretoken"]');
+  var emailInput = document.getElementById('email-query');
+
+  function bindPickAll() {
+    var all = document.getElementById('pick-all');
+    var form = document.getElementById('pick-form');
+    if (!all || !form) return;
+    all.addEventListener('change', function () {
+      form.querySelectorAll('input[name="account_id"]').forEach(function (box) {
+        box.checked = all.checked;
+      });
+    });
+  }
+
+  function renderChips() {
+    list.innerHTML = '';
+    chips.forEach(function (item, index) {
+      var row = document.createElement('li');
+      row.className = 'filter-chip';
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'filter-chip-x';
+      remove.setAttribute('data-index', String(index));
+      remove.setAttribute('aria-label', 'убрать');
+      remove.textContent = '×';
+      var label = document.createElement('span');
+      label.textContent = item.title;
+      row.appendChild(remove);
+      row.appendChild(label);
+      list.appendChild(row);
+    });
+  }
+
+  function addChip(key, title) {
+    var exists = chips.some(function (item) {
+      return item.key === key;
+    });
+    if (exists) return;
+    chips.push({ key: key, title: title });
+    renderChips();
+  }
+
+  function runSearch(data, after) {
+    fetch(root.getAttribute('data-search-url'), {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: data
+    }).then(function (response) {
+      if (response.status === 204) return null;
+      if (!response.ok) return null;
+      return response.text();
+    }).then(function (html) {
+      if (html == null) return;
+      foundBox.innerHTML = html;
+      if (after) after();
+      bindPickAll();
+    });
+  }
+
+  root.querySelectorAll('[data-filter-key]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      addChip(
+        button.getAttribute('data-filter-key'),
+        button.getAttribute('data-filter-title')
+      );
+    });
+  });
+
+  list.addEventListener('click', function (event) {
+    var button = event.target.closest('.filter-chip-x');
+    if (!button) return;
+    var index = parseInt(button.getAttribute('data-index'), 10);
+    if (isNaN(index)) return;
+    chips.splice(index, 1);
+    renderChips();
+  });
+
+  document.getElementById('filter-search').addEventListener('click', function () {
+    if (!chips.length) return;
+    var data = new FormData();
+    data.append('csrfmiddlewaretoken', token ? token.value : '');
+    chips.forEach(function (item) {
+      data.append('filter_key', item.key);
+    });
+    runSearch(data, function () {
+      chips = [];
+      renderChips();
+    });
+  });
+
+  function searchEmail() {
+    var value = (emailInput.value || '').trim();
+    if (!value) return;
+    var data = new FormData();
+    data.append('csrfmiddlewaretoken', token ? token.value : '');
+    data.append('email', value);
+    runSearch(data);
+  }
+
+  document.getElementById('email-search').addEventListener('click', searchEmail);
+  emailInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchEmail();
+    }
+  });
+
+  bindPickAll();
+})();
+</script>
 {% endblock %}

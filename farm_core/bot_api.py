@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from farm_core.agent_queue import enqueue_stop_chrome
 from farm_core.circle import confirm_opened, finish_entry, _active_entry
 from farm_core.metrics import put_daily_metric
+from farm_core.mode_labels import normalize_modes
 from farm_core.models import (
     Account,
     AccountLoginSecret,
@@ -527,7 +528,7 @@ def _steps(entry):
     if entry is None:
         return []
     steps = []
-    for item in entry.run.modes or []:
+    for item in normalize_modes(entry.run.modes):
         steps.append({'key': item.get('key'), 'value': item.get('value')})
     return steps
 

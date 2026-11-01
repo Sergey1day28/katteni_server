@@ -1,0 +1,25 @@
+{% if found %}
+<form method="post" id="pick-form">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="add_selected">
+  <p class="row">
+    <label><input type="checkbox" id="pick-all"> Выбрать все</label>
+    <span class="muted">найдено {{ found|length }}, без данных: {% if missing %}<span class="warn">{{ missing }}</span>{% else %}0{% endif %}</span>
+    <button type="submit" class="btn-primary">Добавить</button>
+  </p>
+  <ul class="list">
+    {% for account in found %}
+    <li>
+      <label>
+        <input type="checkbox" name="account_id" value="{{ account.id }}">
+        {% include "farm_console/account_status.html" %}
+      </label>
+    </li>
+    {% endfor %}
+  </ul>
+</form>
+{% elif searched %}
+<p class="muted">Поиск ничего не нашёл{% if missing %}, без данных: <span class="warn">{{ missing }}</span>{% endif %}</p>
+{% else %}
+<p class="muted">Наберите фильтр и нажмите Искать</p>
+{% endif %}

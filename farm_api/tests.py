@@ -4,7 +4,7 @@ from pathlib import Path
 import pyotp
 from django.test import TestCase
 
-from farm_core.folder_filter import default_filter
+from farm_core.folder_filter import default_filter, replace_members
 from farm_core.models import (
     Account,
     AccountLoginSecret,
@@ -40,6 +40,7 @@ class ApiV1Tests(TestCase):
             modes=[{'key': 'collectSBC', 'value': None}],
             play_mode='SBCmode',
         )
+        replace_members(self.folder, [self.account])
 
     def _post(self, route, payload):
         return self.client.post(
@@ -119,6 +120,9 @@ class ApiV1Tests(TestCase):
         self.assertIn('items', response.json()['data'])
 
     def _start_run_session(self, email, ea_account_id=None):
+        account = Account.objects.filter(email=email).first()
+        if account is not None:
+            replace_members(self.folder, [account])
         start_folder(self.folder, worker=self.worker)
         RunEntry.objects.filter(email=email).update(state=RunEntry.STATE_QUEUED)
         payload = {

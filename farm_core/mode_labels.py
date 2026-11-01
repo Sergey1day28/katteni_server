@@ -46,17 +46,63 @@ MODE_TITLES = {
 }
 
 
+MANGLED_REQUESTS24 = 'За  часа можно сделать запросов'
+
+
+def _int_or_none(raw):
+    if raw is None or raw == '':
+        return None
+    if isinstance(raw, int):
+        return raw
+    text = str(raw).strip()
+    if text.isdigit():
+        return int(text)
+    return None
+
+
+def _requests24_from_mangled(value):
+    number = _int_or_none(value)
+    if number is None:
+        return None
+    text = str(number)
+    if text == '24':
+        return None
+    if text.startswith('24') and len(text) > 2 and text[2:].isdigit():
+        return int(text[2:])
+    return number
+
+
 def parse_mode_line(line):
-    raw = (line or '').replace('\r', '').strip()
+    raw = (line or '').replace('\r', '').replace('+', '').strip()
     if not raw:
         return None
+    if raw.startswith(MANGLED_REQUESTS24):
+        rest = raw[len(MANGLED_REQUESTS24):].strip()
+        if not rest or rest.isdigit():
+            value = _requests24_from_mangled(rest)
+            if value is None:
+                return None
+            return {
+                'key': 'requests24hours',
+                'value': value,
+                'unknown': False,
+                'title_ru': 'За 24 часа можно сделать запросов',
+            }
+    for title in sorted(MODE_TITLES, key=len, reverse=True):
+        if raw != title and not raw.startswith(title):
+            continue
+        rest = raw[len(title):].strip()
+        if rest and not rest.isdigit():
+            continue
+        return {
+            'key': MODE_TITLES[title],
+            'value': int(rest) if rest else None,
+            'unknown': False,
+            'title_ru': title,
+        }
     number = ''.join(ch for ch in raw if ch.isdigit())
-    title = ''.join(ch for ch in raw if not ch.isdigit() and ch != '+').strip()
-    key = MODE_TITLES.get(title)
-    if key is None:
-        return {'key': title, 'value': number, 'unknown': True, 'title_ru': title}
-    value = int(number) if number else None
-    return {'key': key, 'value': value, 'unknown': False, 'title_ru': title}
+    title = ''.join(ch for ch in raw if not ch.isdigit()).strip()
+    return {'key': title, 'value': number, 'unknown': True, 'title_ru': title}
 
 
 def parse_modes_text(text):
@@ -66,3 +112,25 @@ def parse_modes_text(text):
         if parsed is not None:
             items.append(parsed)
     return items
+
+
+def normalize_mode_item(item):
+    if not item:
+        return None
+    key = item.get('key')
+    value = item.get('value')
+    if key == MANGLED_REQUESTS24:
+        value = _requests24_from_mangled(value)
+        if value is None:
+            return None
+        return {'key': 'requests24hours', 'value': value}
+    return {'key': key, 'value': value}
+
+
+def normalize_modes(items):
+    result = []
+    for item in items or []:
+        normalized = normalize_mode_item(item)
+        if normalized is not None:
+            result.append(normalized)
+    return result

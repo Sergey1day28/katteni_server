@@ -25,7 +25,8 @@ def find_shortcut(root, email):
     needle = (email or '').strip()
     if not needle:
         return SearchResult(error='не найден ярлык')
-    matches = [path for path in _collect_files(root) if needle in path.name]
+    needle_l = needle.lower()
+    matches = [path for path in _collect_files(root) if needle_l in path.name.lower()]
     if not matches:
         return SearchResult(error='не найден ярлык')
     if len(matches) > 1:

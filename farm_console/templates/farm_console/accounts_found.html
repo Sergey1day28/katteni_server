@@ -1,0 +1,37 @@
+{% if found %}
+<p class="row">
+  <label><input type="checkbox" id="pick-all"> Выбрать все</label>
+  <span class="muted">найдено {{ found|length }}{% if missing %}, без данных: <span class="warn">{{ missing }}</span>{% endif %}</span>
+  <button type="button" class="btn-primary" id="open-selected">Открыть выбранные</button>
+</p>
+<div class="table-wrap">
+<table>
+  <tr><th></th><th>Email</th><th>Баланс</th><th>СБЧ</th><th></th></tr>
+  {% for account in found %}
+  <tr>
+    <td><input type="checkbox" name="account_id" value="{{ account.id }}"></td>
+    <td><a href="{% url 'farm-account' account.id %}">{% include "farm_console/account_status.html" %}</a></td>
+    <td>{{ account.balance }}</td>
+    <td>
+      {% if account.sbc_set_name %}
+        {{ account.sbc_set_name }}
+        · попыток {{ account.sbc_tried }}
+        {% if account.sbc_collected %} · сданы: {{ account.sbc_collected|join:", " }}{% endif %}
+        {% if account.sbc_failed %} · не сданы: <span class="warn">{{ account.sbc_failed|join:", " }}</span>{% endif %}
+        {% if not account.sbc_tried %} · попыток не было{% endif %}
+      {% else %}
+        набор не назначен
+      {% endif %}
+    </td>
+    <td>
+      <button type="button" class="btn-ghost" data-open-account="{{ account.id }}">Открыть</button>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% elif searched %}
+<p class="muted">Поиск ничего не нашёл{% if missing %}, без данных: <span class="warn">{{ missing }}</span>{% endif %}</p>
+{% else %}
+<p class="muted">Нет аккаунтов</p>
+{% endif %}

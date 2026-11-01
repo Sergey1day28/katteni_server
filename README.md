@@ -28,7 +28,7 @@ python manage.py migrate
 ## Тесты
 
 ```bat
-python manage.py test farm_core.tests farm_core.tests_circle farm_core.tests_persist farm_api.tests farm_console.tests farm_agent_api.tests farm_agent.tests_agent farm_agent.tests_search
+python manage.py test farm_core.tests farm_core.tests_circle farm_core.tests_persist farm_core.tests_modes farm_api.tests farm_console.tests farm_agent_api.tests farm_agent.tests_agent farm_agent.tests_search
 ```
 
 Явные метки модулей: каталоги приложений без `__init__.py`.

@@ -42,4 +42,17 @@ class AgentClient:
         except urllib.error.URLError as error:
             logging.info('Сеть агента недоступна: %s', error)
             raise
-        return json.loads(raw)
+        return _payload(json.loads(raw))
+
+
+def _payload(parsed):
+    if not isinstance(parsed, dict):
+        return {}
+    if parsed.get('ok') is False:
+        error = parsed.get('error') or {}
+        logging.info('Ответ агента не ok: %s', error.get('message') or error)
+        return {}
+    data = parsed.get('data')
+    if isinstance(data, dict):
+        return data
+    return parsed
