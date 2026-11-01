@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Пульт фермы{% endblock %}</title>
+  {% block refresh %}<meta http-equiv="refresh" content="5">{% endblock %}
+  <style>
+    :root {
+      --bg: #101218;
+      --bg-elev: #171b24;
+      --bg-nav: #0c0e14;
+      --line: #2a3140;
+      --text: #e7ebf3;
+      --muted: #8b93a7;
+      --link: #8bb4ff;
+      --ok: #6ee7b7;
+      --ok-bg: #16352c;
+      --warn: #f0a36b;
+      --warn-bg: #3a2718;
+      --danger: #f07178;
+      --danger-bg: #3a1c22;
+      --primary: #5b8def;
+      --primary-press: #4a78d4;
+      --focus: #8bb4ff;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    html, body { background: var(--bg); color: var(--text); }
+    body {
+      margin: 0;
+      font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+      color-scheme: dark;
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 10px 20px;
+      background: var(--bg-nav);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { font-weight: 650; letter-spacing: .02em; margin-right: 8px; color: var(--text); }
+    .top a {
+      color: var(--muted);
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    .top a:hover { color: var(--text); background: var(--bg-elev); text-decoration: none; }
+    .top a.is-active { color: var(--text); background: var(--bg-elev); }
+    .page { padding: 20px 24px 40px; max-width: 1600px; }
+    h1 { font-size: 22px; font-weight: 650; margin: 0 0 16px; }
+    h2 { font-size: 15px; font-weight: 650; margin: 28px 0 12px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); }
+    .msg {
+      background: #1c2a44;
+      border: 1px solid #2d4a78;
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      margin: 0 0 16px;
+    }
+    .card {
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin: 0 0 18px;
+    }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 16px; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 18px; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: #141822; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #1c2230; }
+    .ok, .warn { font-weight: 600; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .badge {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .badge.ok { background: var(--ok-bg); color: var(--ok); }
+    .badge.warn { background: var(--warn-bg); color: var(--warn); }
+    input, select, textarea, button {
+      font: inherit;
+      color: var(--text);
+      background: #0f131b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    input, select, textarea { padding: 7px 9px; }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+      border-color: var(--focus);
+    }
+    textarea { width: 100%; max-width: 760px; min-height: 120px; }
+    label { color: var(--muted); }
+    button {
+      padding: 7px 12px;
+      cursor: pointer;
+      background: #232a38;
+      margin: 0 2px 4px 0;
+    }
+    button:hover { background: #2c3446; }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-press); }
+    .btn-danger { background: var(--danger-bg); border-color: #6a2a33; color: var(--danger); }
+    .btn-danger:hover { background: #4a2229; }
+    .btn-ghost { background: transparent; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; margin: 0 0 10px; }
+    .list { list-style: none; padding: 0; margin: 0 0 16px; }
+    .list li {
+      display: flex; gap: 8px; align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .chip {
+      display: inline-block;
+      background: #232a38;
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin: 2px 4px 2px 0;
+      font-size: 12px;
+    }
+    .login-wrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .login-card { width: min(360px, 100%); }
+    .login-card h1 { margin-bottom: 8px; }
+    .login-card form p { margin: 0 0 12px; }
+    .login-card input { width: 100%; margin-top: 4px; }
+    .login-card button { width: 100%; margin-top: 8px; }
+  </style>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% block chrome %}
+<nav class="top">
+  <span class="brand">Пульт</span>
+  <a href="{% url 'farm-home' %}"{% if request.resolver_match.url_name == 'farm-home' %} class="is-active"{% endif %}>Ферма</a>
+  <a href="{% url 'farm-folder-create' %}"{% if request.resolver_match.url_name == 'farm-folder-create' %} class="is-active"{% endif %}>Новая папка</a>
+  <a href="{% url 'farm-schedule' %}"{% if request.resolver_match.url_name == 'farm-schedule' %} class="is-active"{% endif %}>Расписание</a>
+  <a href="{% url 'farm-pc' %}"{% if request.resolver_match.url_name == 'farm-pc' %} class="is-active"{% endif %}>ПК</a>
+  <a href="{% url 'farm-accounts' %}"{% if request.resolver_match.url_name == 'farm-accounts' or request.resolver_match.url_name == 'farm-account' %} class="is-active"{% endif %}>Аккаунты</a>
+  <a href="{% url 'farm-filters' %}"{% if request.resolver_match.url_name == 'farm-filters' %} class="is-active"{% endif %}>Фильтры</a>
+  <a href="{% url 'farm-sbc-week' %}"{% if request.resolver_match.url_name == 'farm-sbc-week' %} class="is-active"{% endif %}>СБЧ за неделю</a>
+  <a href="{% url 'farm-errors' %}"{% if request.resolver_match.url_name == 'farm-errors' %} class="is-active"{% endif %}>Ошибки</a>
+  <a href="{% url 'farm-import' %}"{% if request.resolver_match.url_name == 'farm-import' %} class="is-active"{% endif %}>Импорт</a>
+  {% if user.is_authenticated %}
+  <form method="post" action="{% url 'farm-logout' %}" style="margin-left:auto">
+    {% csrf_token %}
+    <button type="submit" class="btn-ghost">Выйти</button>
+  </form>
+  {% endif %}
+</nav>
+<main class="page">
+{% endblock %}
+{% block content %}{% endblock %}
+{% block chrome_end %}
+</main>
+{% endblock %}
+</body>
+</html>

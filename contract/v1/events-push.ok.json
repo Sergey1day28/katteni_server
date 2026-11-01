@@ -1,0 +1,12 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "events": [
+      {"id": "evt-1", "type": "metric.day", "at": "2026-10-31T12:00:00+03:00", "data": {"date": "2026-10-31", "name": "market_searches", "value": 12}}
+    ]
+  },
+  "response": {
+    "ok": true,
+    "data": {"accepted": ["evt-1"], "rejected": []}
+  }
+}

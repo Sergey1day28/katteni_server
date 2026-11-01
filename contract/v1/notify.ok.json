@@ -1,0 +1,12 @@
+{
+  "request": {
+    "email": "a@b.com",
+    "channel": "important",
+    "text": "не удалось прогрузить",
+    "dedup_key": "page-a@b.com"
+  },
+  "response": {
+    "ok": true,
+    "data": {"queued": true}
+  }
+}

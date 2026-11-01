@@ -1,0 +1,32 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Импорт{% endblock %}
+{% block refresh %}{% endblock %}
+{% block content %}
+<h1>Импорт старой базы</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<form method="post" class="card">
+  {% csrf_token %}
+  <p><label>Путь к db.sqlite3 <input name="path" size="80"></label></p>
+  <button type="submit" class="btn-primary">Импортировать sqlite</button>
+</form>
+<form method="post" class="card" enctype="multipart/form-data">
+  {% csrf_token %}
+  <input type="hidden" name="import_kind" value="csv">
+  <p><label>CSV <input type="file" name="csv_file" accept=".csv,text/csv"></label></p>
+  <p class="muted">Колонки email и totp, пароль не сохраняется. Без заголовка — как лист «Акки ЕА»: A email, K TOTP. EA id допишется при первом входе в профиль.</p>
+  <button type="submit" class="btn-primary">Импортировать CSV</button>
+</form>
+{% if report %}
+<p>Последний отчёт {{ report.created_at }} · {{ report.source_path }}: {{ report.summary }}</p>
+{% if report.unresolved %}
+<h2>Спорные строки</h2>
+<ul>
+  {% for item in report.unresolved %}
+  <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="ok">Спорных строк нет.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{
+  "server_url": "http://127.0.0.1:8000",
+  "worker_id": "this-pc",
+  "token": "",
+  "profiles_dir": "",
+  "log_path": "",
+  "journal_path": "",
+  "lock_path": ""
+}

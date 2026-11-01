@@ -1,0 +1,99 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Ферма{% endblock %}
+{% block content %}
+<h1>Ферма</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<div class="toolbar">
+  <span class="muted">ПК:</span>
+  {% if worker %}
+    <strong>{{ worker.title|default:worker.worker_id }}</strong>
+    {% if worker_alive %}<span class="badge ok">жив</span>{% else %}<span class="badge warn">молчит</span>{% endif %}
+    <span class="muted">опрос {{ worker.last_poll_at|default:"нет" }}</span>
+  {% else %}
+    <span class="muted">нет</span>
+  {% endif %}
+  <form method="post">{% csrf_token %}
+    <button class="btn-danger" name="action" value="stop_chrome" onclick="return confirm('Погасить весь Chrome на этом ПК?')">Погасить Chrome</button>
+  </form>
+</div>
+<div class="table-wrap">
+<table>
+  <tr>
+    <th>Папка</th>
+    <th>Аккаунтов</th>
+    <th>Нет данных</th>
+    <th>ПК</th>
+    <th>Круг</th>
+    <th>Прогресс</th>
+    <th>Сейчас открываются</th>
+    <th>Ошибки 24 ч</th>
+    <th>Расписание</th>
+    <th></th>
+  </tr>
+  {% for row in folders %}
+  <tr>
+    <td>
+      <a href="{% url 'farm-folder' row.folder.id %}">{{ row.folder.name }}</a>
+      {% if row.unknown_modes %}<div class="warn">неизвестный мод: {{ row.unknown_modes|join:", " }}</div>{% endif %}
+    </td>
+    <td>{{ row.count }}</td>
+    <td>{% if row.missing %}<span class="warn">{{ row.missing }}</span>{% else %}0{% endif %}</td>
+    <td>
+      {% if worker %}
+        {{ worker.title|default:worker.worker_id }}
+        {% if worker_alive %}<span class="badge ok">жив</span>{% else %}<span class="badge warn">молчит</span>{% endif %}
+      {% endif %}
+    </td>
+    <td>{% if row.run %}<span class="badge ok">{{ row.run.state }}</span> с {{ row.run.started_at }} <span class="muted">({{ row.run.started_by }})</span>{% else %}<span class="muted">нет</span>{% endif %}</td>
+    <td>
+      {% if row.progress %}
+      <span class="muted">ждут</span> {{ row.progress.waiting }} ·
+      <span class="muted">очередь</span> {{ row.progress.queued }} ·
+      <span class="muted">открыты</span> {{ row.progress.opened }} ·
+      <span class="muted">закрыты</span> {{ row.progress.closed }} ·
+      <span class="muted">упали</span> {{ row.progress.failed }}
+      {% endif %}
+    </td>
+    <td>
+      {% for entry in row.opening %}
+        {{ entry.email }} <span class="chip">{{ entry.state }}{% if entry.last_command %} / {{ entry.last_command.state }}{% endif %}</span>{% if not forloop.last %}<br>{% endif %}
+      {% empty %}—{% endfor %}
+    </td>
+    <td>
+      {% if row.fail_count %}
+        <span class="warn">{{ row.fail_count }}</span>
+        {% if row.last_fail %} · {{ row.last_fail }}{% endif %}
+      {% else %}0{% endif %}
+    </td>
+    <td>
+      {% if row.schedule %}
+        {{ row.schedule.start_time }}–{{ row.schedule.stop_time }} <span class="muted">{{ row.schedule.days }}</span>
+      {% else %}<span class="muted">нет</span>{% endif %}
+    </td>
+    <td>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="folder_id" value="{{ row.folder.id }}">
+        <button class="btn-primary" name="action" value="start">Запустить ({{ row.count }})</button>
+        <button name="action" value="continue">Продолжить</button>
+        <button class="btn-danger" name="action" value="stop">Остановить</button>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="10">Папок нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+<div class="card">
+<h2>Зависание круга</h2>
+<p class="muted">Heartbeat бота: {{ heartbeat_sec }} с. Если вызовов нет дольше порога — письмо в important.</p>
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="stall">
+  <p><label>Порог, минут <input name="stall_minutes" type="number" min="1" value="{{ stall_minutes }}"></label></p>
+  <p><label><input type="checkbox" name="stall_kill_chrome" value="1"{% if stall_kill_chrome %} checked{% endif %}> Гасить Chrome командой агента</label></p>
+  <p><label><input type="checkbox" name="page_not_loaded_close" value="1"{% if page_not_loaded_close %} checked{% endif %}> Закрывать профиль, если страница EA не загрузилась</label></p>
+  <button type="submit" class="btn-primary">Сохранить</button>
+</form>
+</div>
+{% endblock %}

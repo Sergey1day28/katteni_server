@@ -1,0 +1,56 @@
+{% extends "farm_console/base.html" %}
+{% block title %}{{ account.email }}{% endblock %}
+{% block content %}
+<h1>{{ account.email|default:account.name }}</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<p class="muted">EA {{ account.ea_account_id|default_if_none:"ещё нет" }} · связь {% if account.linked_at %}{{ account.linked_at }}{% else %}не было{% endif %} · рынок {% if account.market_open == True %}открыт{% elif account.market_open == False %}закрыт{% else %}нет данных{% endif %} · бан {{ account.ban }} · снайп {{ account.snipe_allowed }} · баланс {{ account.balance }}</p>
+<p>Набор СБЧ: {% if assignment %}<strong>{{ assignment.sbc_set.name }}</strong>{% else %}нет{% endif %}
+{% if assignment %}
+<form method="post" style="display:inline">{% csrf_token %}
+  <button class="btn-danger" name="action" value="unassign">Снять набор</button>
+</form>
+{% endif %}
+</p>
+<p>Последний круг:
+  {% if last_run %}{{ last_run.run.folder.name }}, {{ last_run.state }}, закрыт {{ last_run.closed_at|default:"ещё открыт" }}{% else %}не открывался{% endif %}
+</p>
+<h2>Неделя</h2>
+<div class="table-wrap">
+<table>
+  <tr>
+    <th>День</th>
+    <th>Запросы рынка</th>
+    <th>Паки / предпросмотр / бронза</th>
+    <th>СБЧ сданы</th>
+    <th>СБЧ не сданы</th>
+    <th>Открывался</th>
+  </tr>
+  {% for row in week_rows %}
+  <tr>
+    <td>{{ row.date }}</td>
+    <td>{% if row.market != None %}{{ row.market }}{% else %}<span class="muted">нет отчёта</span>{% endif %}</td>
+    <td>
+      {% if row.packs != None or row.preview != None or row.bronze != None %}
+        {{ row.packs|default:"—" }} / {{ row.preview|default:"—" }} / {{ row.bronze|default:"—" }}
+      {% else %}<span class="muted">нет данных</span>{% endif %}
+    </td>
+    <td>{% if row.collected %}{{ row.collected|join:", " }}{% else %}<span class="muted">нет данных</span>{% endif %}</td>
+    <td>{% if row.failed %}<span class="warn">{{ row.failed|join:", " }}</span>{% else %}<span class="muted">нет данных</span>{% endif %}</td>
+    <td>
+      {% if row.opened %}{{ row.opened.run.folder.name }}, закрыт {{ row.opened.closed_at }}{% else %}—{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<div class="card">
+<h2>Настройки снайпа</h2>
+<p class="muted">Один документ на всех ({{ account_count }} аккаунтов). Версия {% if snipe %}{{ snipe.version }}{% else %}нет{% endif %}.</p>
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save_snipe">
+  <p><textarea name="snipe_payload" rows="10">{% if snipe %}{{ snipe.payload }}{% endif %}</textarea></p>
+  <button type="submit" class="btn-primary">Записать группе</button>
+</form>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{
+  "request": {"challengeId": "1"},
+  "response": {
+    "ok": false,
+    "error": {"code": "upstream_failed", "message": "Солвер не ответил"}
+  }
+}

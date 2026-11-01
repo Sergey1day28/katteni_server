@@ -1,0 +1,12 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "ea_account_id": 10011,
+    "account_name": "Player",
+    "coins": 5000
+  },
+  "response": {
+    "ok": true,
+    "data": {"account": {"id": 1, "known": true}}
+  }
+}

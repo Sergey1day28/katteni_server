@@ -1,0 +1,11 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "payload": "{}",
+    "base_version": 1
+  },
+  "response": {
+    "ok": true,
+    "data": {"version": 2}
+  }
+}

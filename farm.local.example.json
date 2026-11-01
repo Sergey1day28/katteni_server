@@ -1,0 +1,27 @@
+{
+  "secret_key": "",
+  "debug": true,
+  "allowed_hosts": ["127.0.0.1", "localhost"],
+  "database": {
+    "name": "katteni_farm",
+    "user": "farm",
+    "password": "",
+    "host": "127.0.0.1",
+    "port": 5432
+  },
+  "socks": "socks5://127.0.0.1:10808",
+  "telegram_token": "",
+  "solver_token": "",
+  "chats": {
+    "important": ""
+  },
+  "agent": {
+    "worker_id": "this-pc",
+    "token": "",
+    "title": "Этот ПК"
+  },
+  "heartbeat_sec": 60,
+  "stall_minutes": 5,
+  "stall_kill_chrome": false,
+  "page_not_loaded_close": false
+}

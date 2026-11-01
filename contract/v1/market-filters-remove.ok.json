@@ -1,0 +1,7 @@
+{
+  "request": {"titles": ["Cheap"]},
+  "response": {
+    "ok": true,
+    "data": {"removed": ["Cheap"]}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "snapshot": {
+      "coins": 5000,
+      "packs_count": 2,
+      "market_limit": 650,
+      "market_reset_hour": 6,
+      "market_stamps": []
+    }
+  },
+  "response": {"ok": true, "data": {}}
+}

@@ -1,0 +1,38 @@
+{% extends "farm_console/base.html" %}
+{% block title %}СБЧ за неделю{% endblock %}
+{% block content %}
+<h1>СБЧ за неделю</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+{% if not has_data %}
+<p class="muted">Нет данных. Попытки появятся, когда core-v2 начнёт слать события СБЧ.</p>
+{% endif %}
+<div class="table-wrap">
+<table>
+  <tr><th>Имя</th><th>Приоритет</th><th>Аккаунтов</th><th>Сдали</th><th>Не сдали</th><th></th></tr>
+  {% for row in names %}
+  <tr>
+    <td>{{ row.sbc_name }}</td>
+    <td>{% if row.priority %}<span class="badge ok">да</span>{% else %}нет{% endif %}</td>
+    <td>{{ row.accounts }}</td>
+    <td>{{ row.collected }}</td>
+    <td>{% if row.failed %}<span class="warn">{{ row.failed }}</span>{% else %}{{ row.failed }}{% endif %}</td>
+    <td>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="extra" value="{{ row.sbc_name }}">
+        <input type="hidden" name="name" value="Не собрали {{ row.sbc_name }}">
+        <button name="action" value="sbc_name">Папка из этого отбора</button>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">Попыток за 7 дней нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+<form method="post" class="toolbar">
+  {% csrf_token %}
+  <button name="action" value="priority">Папка: не собрал приоритет</button>
+  <input name="extra" value="3" size="3">
+  <button name="action" value="nonpriority">Папка: неприоритет меньше N</button>
+</form>
+{% endblock %}

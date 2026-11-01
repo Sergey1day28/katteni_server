@@ -1,0 +1,7 @@
+{
+  "request": {},
+  "response": {
+    "ok": true,
+    "data": {"items": [{"id": 1, "name": "sbc", "version": 1, "common": false}]}
+  }
+}

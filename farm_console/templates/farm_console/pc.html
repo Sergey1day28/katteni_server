@@ -1,0 +1,50 @@
+{% extends "farm_console/base.html" %}
+{% block title %}ПК{% endblock %}
+{% block content %}
+<h1>ПК</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<div class="table-wrap">
+<table>
+  <tr><th>worker_id</th><th>Имя</th><th>Вкл</th><th>Последний опрос</th><th>Версия</th></tr>
+  {% for worker in workers %}
+  <tr>
+    <td>{{ worker.worker_id }}</td>
+    <td>{{ worker.title }}</td>
+    <td>{{ worker.enabled }}</td>
+    <td>{{ worker.last_poll_at|default:"нет" }}{% if worker_alive %} · <span class="badge ok">жив</span>{% else %} · <span class="badge warn">молчит</span>{% endif %}</td>
+    <td>{{ worker.agent_version }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<form method="post" class="card">
+  {% csrf_token %}
+  <p class="row"><label>Открыть по email <input name="email"></label>
+  <button class="btn-primary" name="action" value="open">Поставить open</button></p>
+  <p>
+    <button class="btn-danger" name="action" value="stop_chrome">Погасить Chrome</button>
+    <button name="action" value="disable">Выключить ПК</button>
+    <button name="action" value="enable">Включить ПК</button>
+  </p>
+</form>
+{% if stale %}
+<p class="warn">Команды в acked дольше 2 минут:
+  {% for command in stale %}{{ command.id }} {{ command.email }}; {% endfor %}
+</p>
+{% endif %}
+<h2>Команды</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>id</th><th>действие</th><th>email</th><th>состояние</th><th>ошибка</th></tr>
+  {% for command in commands %}
+  <tr>
+    <td>{{ command.id }}</td>
+    <td>{{ command.action }}</td>
+    <td>{{ command.email }}</td>
+    <td>{{ command.state }}</td>
+    <td class="warn">{{ command.error_text }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Ошибки{% endblock %}
+{% block content %}
+<h1>Ошибки за 7 дней</h1>
+<p>Открытий агента за сутки упало: {% if open_fails_day %}<span class="badge warn">{{ open_fails_day }}</span>{% else %}{{ open_fails_day }}{% endif %}</p>
+<h2>Агент перестал опрашивать</h2>
+{% for worker in stale_workers %}
+<p class="warn">{{ worker.worker_id }} · последний опрос {{ worker.last_poll_at|default:"нет" }}</p>
+{% empty %}
+<p class="ok">Все ПК отвечают.</p>
+{% endfor %}
+<h2>Открытие упало</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Когда</th><th>ПК</th><th>Папка</th><th>Email</th><th>Ошибка</th></tr>
+  {% for item in agent_fails %}
+  <tr>
+    <td>{{ item.created_at }}</td>
+    <td>{{ item.worker.worker_id }}</td>
+    <td>{% if item.run %}{{ item.run.folder.name }}{% endif %}</td>
+    <td>{{ item.email }}</td>
+    <td class="warn">{{ item.error_text }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+<h2>Расписание не выполнилось</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Когда</th><th>Скрипт</th><th>Папка</th><th>Вид</th><th>Причина</th></tr>
+  {% for item in schedule_errors %}
+  <tr>
+    <td>{{ item.fired_at }}</td>
+    <td>{{ item.schedule.name }}</td>
+    <td>{{ item.schedule.folder.name }}</td>
+    <td>{{ item.kind }}</td>
+    <td class="warn">{{ item.error }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5">нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+<h2>Telegram не ушёл</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Когда</th><th>Канал</th><th>Попыток</th><th>Состояние</th><th>Ошибка</th><th>Текст</th></tr>
+  {% for item in notify_stuck %}
+  <tr>
+    <td>{{ item.created_at }}</td>
+    <td>{{ item.channel }}</td>
+    <td>{{ item.attempts }}</td>
+    <td>{{ item.state }}</td>
+    <td class="warn">{{ item.last_error }}</td>
+    <td>{{ item.text|truncatechars:120 }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "assignment_id": 1
+  },
+  "response": {"ok": true, "data": {}}
+}

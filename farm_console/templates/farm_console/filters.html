@@ -1,0 +1,63 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Фильтры{% endblock %}
+{% block content %}
+<h1>Фильтры</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<h2>Наборы СБЧ</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Имя</th><th>Версия</th><th>Обновлён</th><th>Плиток</th><th>Назначен</th><th>Папки</th><th></th></tr>
+  {% for row in sets %}
+  <tr>
+    <td>{{ row.set.name }}</td>
+    <td>{{ row.set.version }}</td>
+    <td>{{ row.set.updated_at }}</td>
+    <td>{{ row.items }}</td>
+    <td>{{ row.assigned }}</td>
+    <td>{% for folder in row.folders %}{{ folder.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+    <td>
+      <form method="post" class="row">
+        {% csrf_token %}
+        <input type="hidden" name="sbc_set_id" value="{{ row.set.id }}">
+        <select name="folder_id">
+          {% for folder in folders %}<option value="{{ folder.id }}">{{ folder.name }}</option>{% endfor %}
+        </select>
+        <button name="action" value="attach_set">Привязать к папке</button>
+        <button class="btn-danger" name="action" value="clear_set">Снять со всех аккаунтов</button>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Наборов нет</td></tr>
+  {% endfor %}
+</table>
+</div>
+<h2>Фильтры рынка (снайп)</h2>
+<p class="muted">Версия списка {{ market_version }}. Замена целиком, правка по одному фильтру — нет.</p>
+<div class="table-wrap">
+<table>
+  <tr><th>Название</th><th>Версия</th></tr>
+  {% for item in market_items %}
+  <tr><td>{{ item.title }}</td><td>{{ item.version }}</td></tr>
+  {% empty %}
+  <tr><td colspan="2">Список пуст</td></tr>
+  {% endfor %}
+</table>
+</div>
+<form method="post" class="card">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="replace_market">
+  <p><textarea name="market_json" rows="12">{{ market_json }}</textarea></p>
+  <button type="submit" class="btn-primary">Заменить список</button>
+</form>
+<h2>Настройки снайпа</h2>
+<div class="card">
+<p class="muted">{% if snipe %}версия {{ snipe.version }}, {{ snipe.updated_at }}{% else %}документа ещё нет{% endif %}</p>
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save_snipe">
+  <p><textarea name="snipe_payload" rows="8">{% if snipe %}{{ snipe.payload }}{% endif %}</textarea></p>
+  <button type="submit" class="btn-primary">Сохранить</button>
+</form>
+</div>
+{% endblock %}

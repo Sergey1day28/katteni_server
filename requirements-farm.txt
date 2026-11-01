@@ -1,0 +1,5 @@
+Django>=5.2,<5.3
+psycopg[binary]>=3.2
+pyotp>=2.9
+requests>=2.32
+PySocks>=1.7

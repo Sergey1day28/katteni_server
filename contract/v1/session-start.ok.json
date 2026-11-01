@@ -1,0 +1,20 @@
+{
+  "request": {
+    "email": "a@b.com",
+    "ea_account_id": 10011,
+    "client": {"engine": "core-v2", "version": "1", "known_modes": ["collectSBC"]},
+    "snipe_settings_version": 0
+  },
+  "response": {
+    "ok": true,
+    "data": {
+      "session": "11111111-1111-1111-1111-111111111111",
+      "account": {"id": 1, "known": true},
+      "run": {"entry_id": 1, "folder": "Свои", "play_mode": "SBCmode"},
+      "steps": [{"key": "collectSBC", "value": null}],
+      "versions": {"sbc": 1, "market_filters": 1, "snipe_settings": 1},
+      "snipe_settings": null,
+      "heartbeat_sec": 60
+    }
+  }
+}

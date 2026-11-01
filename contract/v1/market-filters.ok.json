@@ -1,0 +1,10 @@
+{
+  "request": {},
+  "response": {
+    "ok": true,
+    "data": {
+      "version": 1,
+      "items": [{"title": "Cheap", "payload": {"title": "Cheap"}, "version": 1}]
+    }
+  }
+}

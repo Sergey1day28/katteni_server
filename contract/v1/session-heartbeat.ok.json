@@ -1,0 +1,10 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "stage": "collectSBC"
+  },
+  "response": {
+    "ok": true,
+    "data": {"action": "continue"}
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "session": "11111111-1111-1111-1111-111111111111",
+    "reason": "done",
+    "text": ""
+  },
+  "response": {
+    "ok": true,
+    "data": {"action": "close_browser"}
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "items": [{"name": "Gold Upgrade", "payload": {}, "base_version": 1}],
+    "set_id": 1,
+    "priority": true
+  },
+  "response": {
+    "ok": true,
+    "data": {"saved": [{"name": "Gold Upgrade", "version": 2}], "conflicts": []}
+  }
+}

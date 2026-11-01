@@ -1,0 +1,10 @@
+{
+  "request": {"session": "11111111-1111-1111-1111-111111111111"},
+  "response": {
+    "ok": true,
+    "data": {
+      "assignment": {"id": 1, "set_id": 1, "name": "sbc", "version": 1},
+      "items": [{"name": "Gold Upgrade", "priority": true, "payload": {}, "version": 1}]
+    }
+  }
+}

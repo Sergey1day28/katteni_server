@@ -1,0 +1,13 @@
+{% extends "farm_console/base.html" %}
+{% block title %}Новая папка{% endblock %}
+{% block content %}
+<h1>Новая папка</h1>
+<div class="card">
+<form method="post">
+  {% csrf_token %}
+  <p><label>Имя <input name="name" required></label></p>
+  <button type="submit" class="btn-primary">Создать</button>
+</form>
+<p class="muted">В новой папке нет фильтра: в круг попадут все аккаунты, кроме исключённых вручную.</p>
+</div>
+{% endblock %}

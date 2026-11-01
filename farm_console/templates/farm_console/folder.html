@@ -1,0 +1,186 @@
+{% extends "farm_console/base.html" %}
+{% block title %}{{ folder.name }}{% endblock %}
+{% block content %}
+<h1>{{ folder.name }}</h1>
+{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<div class="card">
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save">
+  <div class="row">
+    <label>Имя <input name="name" value="{{ folder.name }}"></label>
+    <label>Режим <input name="play_mode" value="{{ folder.play_mode }}"></label>
+    <label>Открывать сразу <input name="open_at_a_time" value="{{ folder.open_at_a_time }}" size="4"></label>
+    <label>Порядок
+      <select name="order">
+        <option value="email"{% if folder.order == 'email' %} selected{% endif %}>по email</option>
+        <option value="last_opened"{% if folder.order == 'last_opened' %} selected{% endif %}>по давности</option>
+      </select>
+    </label>
+  </div>
+  <p><label><input type="checkbox" name="refresh_on_start" value="1" {% if folder.refresh_on_start %}checked{% endif %}> Пересчитывать состав при старте</label></p>
+  <p><label><input type="checkbox" name="kill_chrome_before_scheduled" value="1" {% if folder.kill_chrome_before_scheduled %}checked{% endif %}> Гасить Chrome перед кругом по расписанию</label></p>
+  <p><label>Набор СБЧ
+    <select name="sbc_set_id">
+      <option value="">нет</option>
+      {% for set in sets %}
+      <option value="{{ set.id }}" {% if folder.sbc_set_id == set.id %}selected{% endif %}>{{ set.name }}</option>
+      {% endfor %}
+    </select>
+  </label></p>
+  <p class="muted">Фильтр (поле / оператор / значение):</p>
+  {% for cond in filter_rows %}
+  <p class="row">
+    <select name="filter_field">
+      {% for field in filter_fields %}
+      <option value="{{ field.key }}"{% if cond.field == field.key %} selected{% endif %}>{{ field.title }}</option>
+      {% endfor %}
+    </select>
+    <select name="filter_op">
+      {% for op, label in filter_ops %}
+      <option value="{{ op }}"{% if cond.op == op %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input name="filter_value" value="{{ cond.value }}">
+  </p>
+  {% empty %}
+  <p class="row">
+    <select name="filter_field">
+      {% for field in filter_fields %}
+      <option value="{{ field.key }}">{{ field.title }}</option>
+      {% endfor %}
+    </select>
+    <select name="filter_op">
+      {% for op, label in filter_ops %}
+      <option value="{{ op }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input name="filter_value">
+  </p>
+  {% endfor %}
+  <p class="row">
+    <select name="filter_field">
+      <option value=""></option>
+      {% for field in filter_fields %}
+      <option value="{{ field.key }}">{{ field.title }}</option>
+      {% endfor %}
+    </select>
+    <select name="filter_op">
+      {% for op, label in filter_ops %}
+      <option value="{{ op }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input name="filter_value" placeholder="ещё условие">
+  </p>
+  <p><label>Моды, по строке<textarea name="modes_text" rows="8" cols="80">{{ folder.modes_text }}</textarea></label></p>
+  <button type="submit" class="btn-primary">Сохранить</button>
+</form>
+</div>
+<div class="card">
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="template">
+  <p class="muted">Шаблоны</p>
+  <p>
+    <button name="template" value="unlinked">Не связывался</button>
+    <button name="template" value="market_open">Рынок открыт</button>
+    <button name="template" value="snipe">Добрать снайп</button>
+    <button name="template" value="sbc_assigned">Добрать СБЧ</button>
+    <button name="template" value="preview">Добрать паки</button>
+    <button name="template" value="priority">Не собрал приоритет</button>
+  </p>
+  <p class="row">
+    <input name="template_extra" placeholder="имя СБЧ или число N">
+    <button name="template" value="sbc_name">Не собрал СБЧ X</button>
+    <button name="template" value="nonpriority">Неприоритет меньше N</button>
+  </p>
+</form>
+</div>
+<p>Разбор модов:
+{% for mode in parsed_modes %}
+  <span class="chip">{{ mode.key }}{% if mode.value %}={{ mode.value }}{% endif %}{% if mode.unknown %} <span class="warn">(неизвестный)</span>{% endif %}</span>
+{% empty %}нет{% endfor %}
+</p>
+<p>Сейчас подходит: <strong>{{ accounts|length }}</strong>, без данных: {% if missing %}<span class="warn">{{ missing }}</span>{% else %}0{% endif %}</p>
+<ul class="list">
+  {% for account in accounts %}
+  <li>
+    <a href="{% url 'farm-account' account.id %}">{{ account.email|default:account.name }}</a>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="account_id" value="{{ account.id }}">
+      <button class="btn-ghost" name="action" value="exclude">убрать</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+<form method="post" class="toolbar">
+  {% csrf_token %}
+  <select name="account_id">
+    {% for account in all_accounts %}
+    <option value="{{ account.id }}">{{ account.email|default:account.name }}</option>
+    {% endfor %}
+  </select>
+  <button name="action" value="include">Добавить руками</button>
+  <button name="action" value="exclude">Исключить руками</button>
+</form>
+{% if manuals %}
+<h2>Ручной список</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Email</th><th>Вид</th><th></th></tr>
+  {% for item in manuals %}
+  <tr>
+    <td>{{ item.account.email }}</td>
+    <td>{{ item.kind }}</td>
+    <td>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="manual_id" value="{{ item.id }}">
+        <button class="btn-ghost" name="action" value="clear_manual">снять</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+<form method="post" class="toolbar">
+  {% csrf_token %}
+  <button class="btn-primary" name="action" value="start">Запустить ({{ accounts|length }})</button>
+  <button name="action" value="continue">Продолжить</button>
+  <button class="btn-danger" name="action" value="stop">Остановить</button>
+</form>
+{% if run %}
+<h2>Текущий круг</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Email</th><th>Стадия</th><th>Поставлен</th><th>Подтверждён</th><th>Закрыт</th><th>Ошибка</th></tr>
+  {% for entry in entries %}
+  <tr>
+    <td>{{ entry.email }}</td>
+    <td><span class="chip">{{ entry.state }}</span></td>
+    <td>{{ entry.queued_at|default:"" }}</td>
+    <td>{{ entry.confirmed_at|default:"" }}</td>
+    <td>{{ entry.closed_at|default:"" }}</td>
+    <td class="warn">{{ entry.error_text }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+<h2>Последние круги</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Когда</th><th>Кто</th><th>Состояние</th><th>Причина</th></tr>
+  {% for item in recent_runs %}
+  <tr>
+    <td>{{ item.started_at }}{% if item.ended_at %} — {{ item.ended_at }}{% endif %}</td>
+    <td>{{ item.started_by }}</td>
+    <td>{{ item.state }}</td>
+    <td>{{ item.end_reason }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4">ещё не запускали</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
