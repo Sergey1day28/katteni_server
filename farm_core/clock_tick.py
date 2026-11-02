@@ -8,6 +8,7 @@ from django.utils import timezone
 from farm_core.bot_api import mark_stalled
 from farm_core.circle import start_folder, continue_folder, stop_run
 from farm_core.models import FolderRun, Schedule, ScheduleFire
+from farm_core.unopened import release_profiles_without_session
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def tick(now=None):
     weekday = now.weekday()
     reports = []
     mark_stalled(now=now)
+    release_profiles_without_session(now=now)
     for schedule in Schedule.objects.filter(enabled=True).select_related('folder'):
         days = _day_numbers(schedule.days)
         in_start = _in_window(now, schedule.start_time)

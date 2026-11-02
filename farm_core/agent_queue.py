@@ -14,11 +14,12 @@ def enqueue_open(worker, email, run=None, entry=None):
     )
 
 
-def enqueue_close(worker, email):
+def enqueue_close(worker, email, run=None):
     return AgentCommand.objects.create(
         worker=worker,
         action=AgentCommand.ACTION_CLOSE,
         email=email,
+        run=run,
         state=AgentCommand.STATE_PENDING,
     )
 

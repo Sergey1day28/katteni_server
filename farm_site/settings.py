@@ -111,6 +111,7 @@ HEARTBEAT_SEC = int(LOCAL.get('heartbeat_sec') or 60)
 STALL_MINUTES = int(LOCAL.get('stall_minutes') or 5)
 STALL_KILL_CHROME = bool(LOCAL.get('stall_kill_chrome', False))
 PAGE_NOT_LOADED_CLOSE = bool(LOCAL.get('page_not_loaded_close', False))
+OPEN_GRACE_SEC = int(LOCAL.get('open_grace_sec') or 120)
 SOLVER_TOKEN = LOCAL.get('solver_token') or ''
 SOLVER_UPSTREAM = LOCAL.get('solver_upstream') or 'https://api.sbcsolver.com'
 TELEGRAM_TOKEN = LOCAL.get('telegram_token') or ''

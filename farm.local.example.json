@@ -13,7 +13,8 @@
   "telegram_token": "",
   "solver_token": "",
   "chats": {
-    "important": ""
+    "important": "",
+    "auto_buy": ""
   },
   "agent": {
     "worker_id": "this-pc",
