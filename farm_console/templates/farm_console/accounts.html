@@ -16,6 +16,16 @@
         {% endfor %}
       </div>
     </details>
+    <details class="filter-add">
+      <summary>Папка</summary>
+      <div class="filter-picker">
+        {% for folder in folders %}
+          <button type="button" data-filter-key="in_folder" data-filter-title="{{ folder.name }}" data-filter-extra="{{ folder.id }}">{{ folder.name }}</button>
+        {% empty %}
+          <span class="muted">папок нет</span>
+        {% endfor %}
+      </div>
+    </details>
     <button type="button" class="btn-primary" id="filter-search">Искать</button>
   </p>
   <p class="row">
@@ -101,12 +111,19 @@
     });
   }
 
-  function addChip(key, title) {
-    var exists = chips.some(function (item) {
-      return item.key === key;
-    });
-    if (exists) return;
-    chips.push({ key: key, title: title });
+  function addChip(key, title, extra) {
+    extra = extra || '';
+    if (key === 'in_folder') {
+      chips = chips.filter(function (item) {
+        return item.key !== 'in_folder';
+      });
+    } else {
+      var exists = chips.some(function (item) {
+        return item.key === key && (item.extra || '') === extra;
+      });
+      if (exists) return;
+    }
+    chips.push({ key: key, title: title, extra: extra });
     renderChips();
   }
 
@@ -131,7 +148,8 @@
     button.addEventListener('click', function () {
       addChip(
         button.getAttribute('data-filter-key'),
-        button.getAttribute('data-filter-title')
+        button.getAttribute('data-filter-title'),
+        button.getAttribute('data-filter-extra')
       );
     });
   });
@@ -151,6 +169,7 @@
     data.append('csrfmiddlewaretoken', token ? token.value : '');
     chips.forEach(function (item) {
       data.append('filter_key', item.key);
+      if (item.extra) data.append('extra_' + item.key, item.extra);
     });
     runSearch(data, function () {
       chips = [];

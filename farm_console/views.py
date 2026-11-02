@@ -381,6 +381,7 @@ def accounts_page(request):
         'missing': 0,
         'searched': False,
         'filter_presets': ACCOUNT_FILTER_PRESETS,
+        'folders': Folder.objects.order_by('name'),
     })
 
 

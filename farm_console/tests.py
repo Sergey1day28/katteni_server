@@ -448,6 +448,31 @@ class ConsoleTests(TestCase):
         self.assertContains(found, 'не сданы')
         self.assertContains(found, 'рынок открыт')
 
+    def test_поиск_аккаунтов_по_папке(self):
+        inside = Account.objects.get(email='a@b.com')
+        Account.objects.create(email='other@x.com')
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        Folder.objects.create(name='Чужие', filter=default_filter())
+        replace_members(folder, [inside])
+        page = self.client.get('/farm/accounts/')
+        self.assertContains(page, '>Папка<')
+        self.assertContains(page, 'data-filter-key="in_folder"')
+        self.assertContains(page, 'data-filter-extra="%s"' % folder.id)
+        self.assertContains(page, 'Свои')
+        self.assertContains(page, 'Чужие')
+        found = self.client.post('/farm/accounts/search/', {
+            'filter_key': 'in_folder',
+            'extra_in_folder': str(folder.id),
+        })
+        self.assertEqual(found.status_code, 200)
+        self.assertContains(found, 'a@b.com')
+        self.assertNotContains(found, 'other@x.com')
+        empty = self.client.post('/farm/accounts/search/', {
+            'filter_key': 'in_folder',
+            'extra_in_folder': 'нет',
+        })
+        self.assertEqual(empty.status_code, 204)
+
     def test_поиск_аккаунтов_по_email(self):
         Account.objects.create(email='other@x.com')
         found = self.client.post(

@@ -360,8 +360,13 @@ def _read_nonpriority_collected_lt(account, now, value):
 
 def _read_in_folder(account, now, value):
     del now
-    exists = FolderMember.objects.filter(folder_id=value, account=account).exists()
-    return exists, True
+    try:
+        folder_id = int(value)
+    except (TypeError, ValueError):
+        return None, False
+    if FolderMember.objects.filter(folder_id=folder_id, account=account).exists():
+        return folder_id, True
+    return None, True
 
 
 def _read_not_opened_days(account, now, value):
@@ -460,6 +465,12 @@ def filter_template(name, extra=''):
         except ValueError:
             limit = 3
         return [{'field': 'nonpriority_collected_lt', 'op': 'lt', 'value': limit}]
+    if name == 'in_folder':
+        try:
+            folder_id = int(extra)
+        except (TypeError, ValueError):
+            return None
+        return [{'field': 'in_folder', 'op': 'eq', 'value': folder_id}]
     return None
 
 
