@@ -506,6 +506,29 @@ def accounts_close(request):
 
 
 @login_required
+@require_POST
+def accounts_delete(request):
+    ids = []
+    for value in request.POST.getlist('account_id'):
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    accounts = list(Account.objects.filter(id__in=ids).order_by('id'))
+    if not accounts:
+        return JsonResponse({'ok': False, 'message': 'Ничего не выбрано'})
+    emails = [(account.email or '').strip() or str(account.id) for account in accounts]
+    deleted_ids = [account.id for account in accounts]
+    Account.objects.filter(id__in=deleted_ids).delete()
+    logger.info('Удалены аккаунты: %s', emails)
+    return JsonResponse({
+        'ok': True,
+        'message': 'Удалено: %s' % len(deleted_ids),
+        'ids': deleted_ids,
+    })
+
+
+@login_required
 @require_http_methods(['GET', 'POST'])
 def account_page(request, account_id):
     account = get_object_or_404(Account, id=account_id)

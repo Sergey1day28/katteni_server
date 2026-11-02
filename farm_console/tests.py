@@ -189,6 +189,8 @@ class ConsoleTests(TestCase):
         self.assertContains(response, 'набор не назначен')
         self.assertContains(response, 'Открыть')
         self.assertContains(response, 'Открыть выбранные')
+        self.assertContains(response, 'id="delete-selected"')
+        self.assertContains(response, 'data-delete-url')
         self.assertContains(response, 'data-open-url')
         self.assertContains(response, 'Закрыть')
         self.assertContains(response, 'data-close-url')
@@ -391,6 +393,19 @@ class ConsoleTests(TestCase):
         self.assertNotContains(page, 'name="filter_field"')
         self.assertNotContains(page, 'name="filter_op"')
         self.assertNotContains(page, 'name="add_filter"')
+
+    def test_удаление_выбранных_аккаунтов(self):
+        keep = Account.objects.get(email='a@b.com')
+        drop = Account.objects.create(email='gone@x.com')
+        response = self.client.post('/farm/accounts/delete/', {'account_id': [str(drop.id)]})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertEqual(body['ids'], [drop.id])
+        self.assertFalse(Account.objects.filter(id=drop.id).exists())
+        self.assertTrue(Account.objects.filter(id=keep.id).exists())
+        empty = self.client.post('/farm/accounts/delete/', {})
+        self.assertFalse(empty.json()['ok'])
 
     def test_поиск_по_email(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())

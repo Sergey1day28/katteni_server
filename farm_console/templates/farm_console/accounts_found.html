@@ -1,6 +1,7 @@
 {% if found %}
 <p class="row">
   <label><input type="checkbox" id="pick-all"> Выбрать все</label>
+  <button type="button" class="btn-danger" id="delete-selected">Удалить</button>
   <span class="muted">найдено {{ found|length }}{% if missing %}, без данных: <span class="warn">{{ missing }}</span>{% endif %}</span>
   <button type="button" class="btn-primary" id="open-selected">Открыть выбранные</button>
 </p>

@@ -3,6 +3,7 @@ from django.urls import path
 from farm_console.views import (
     account_page,
     accounts_close,
+    accounts_delete,
     accounts_open,
     accounts_page,
     accounts_search,
@@ -35,6 +36,7 @@ urlpatterns = [
     path('accounts/search/', accounts_search, name='farm-accounts-search'),
     path('accounts/open/', accounts_open, name='farm-accounts-open'),
     path('accounts/close/', accounts_close, name='farm-accounts-close'),
+    path('accounts/delete/', accounts_delete, name='farm-accounts-delete'),
     path('accounts/<int:account_id>/', account_page, name='farm-account'),
     path('filters/', filters_page, name='farm-filters'),
     path('sbc/', sbc_week_page, name='farm-sbc-week'),

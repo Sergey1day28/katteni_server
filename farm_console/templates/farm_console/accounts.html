@@ -2,7 +2,7 @@
 {% block title %}Аккаунты{% endblock %}
 {% block content %}
 <h1>Аккаунты</h1>
-<div class="card" id="accounts-search" data-search-url="{% url 'farm-accounts-search' %}" data-open-url="{% url 'farm-accounts-open' %}" data-close-url="{% url 'farm-accounts-close' %}">
+<div class="card" id="accounts-search" data-search-url="{% url 'farm-accounts-search' %}" data-open-url="{% url 'farm-accounts-open' %}" data-close-url="{% url 'farm-accounts-close' %}" data-delete-url="{% url 'farm-accounts-delete' %}">
   {% csrf_token %}
   <div id="accounts-open-msg"></div>
   <p class="muted">Поиск</p>
@@ -211,8 +211,49 @@
         ids.push(box.value);
       });
       openAccounts(ids);
+      return;
+    }
+    if (event.target.closest('#delete-selected')) {
+      deleteSelected();
     }
   });
+
+  function deleteSelected() {
+    var ids = [];
+    foundBox.querySelectorAll('input[name="account_id"]:checked').forEach(function (box) {
+      ids.push(box.value);
+    });
+    if (!ids.length) {
+      showOpenMessage('Ничего не выбрано', false);
+      return;
+    }
+    if (!window.confirm('Удалить выбранные аккаунты (' + ids.length + ')?')) return;
+    var data = new FormData();
+    data.append('csrfmiddlewaretoken', token ? token.value : '');
+    ids.forEach(function (id) {
+      data.append('account_id', id);
+    });
+    fetch(root.getAttribute('data-delete-url'), {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: data
+    }).then(function (response) {
+      return response.json();
+    }).then(function (body) {
+      showOpenMessage(body.message || '', !!body.ok);
+      if (!body.ok) return;
+      (body.ids || []).forEach(function (id) {
+        var box = foundBox.querySelector('input[name="account_id"][value="' + id + '"]');
+        var row = box && box.closest('tr');
+        if (row) row.remove();
+      });
+      if (!foundBox.querySelector('input[name="account_id"]')) {
+        foundBox.innerHTML = '<p class="muted">Нет аккаунтов</p>';
+      }
+    }).catch(function () {
+      showOpenMessage('Не удалось удалить аккаунты', false);
+    });
+  }
 })();
 </script>
 {% endblock %}
