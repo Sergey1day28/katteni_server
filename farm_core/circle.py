@@ -326,19 +326,36 @@ def _ordered(accounts, order):
 
 
 def _queue_next(run, worker, count):
-    waiting = list(
-        run.entries.filter(state=RunEntry.STATE_WAITING).order_by('position')[:count]
-    )
-    now = timezone.now()
-    queued = 0
-    for entry in waiting:
-        command = enqueue_open(worker, entry.email, run=run, entry=entry)
-        entry.state = RunEntry.STATE_QUEUED
-        entry.queued_at = now
-        entry.last_command = command
-        entry.save(update_fields=['state', 'queued_at', 'last_command'])
-        queued += 1
-    return queued
+    if worker is None or count <= 0:
+        return 0
+    with transaction.atomic():
+        locked = FolderRun.objects.select_for_update().get(pk=run.pk)
+        occupied = locked.entries.filter(
+            state__in=(RunEntry.STATE_QUEUED, RunEntry.STATE_OPENED),
+        ).count()
+        slots = locked.open_at_a_time - occupied
+        if slots <= 0:
+            logger.info(
+                'Круг папки %s не открывает следующий: занято %s, лимит %s',
+                locked.folder.name,
+                occupied,
+                locked.open_at_a_time,
+            )
+            return 0
+        waiting = list(
+            locked.entries.filter(state=RunEntry.STATE_WAITING)
+            .order_by('position')[:min(count, slots)]
+        )
+        now = timezone.now()
+        queued = 0
+        for entry in waiting:
+            command = enqueue_open(worker, entry.email, run=locked, entry=entry)
+            entry.state = RunEntry.STATE_QUEUED
+            entry.queued_at = now
+            entry.last_command = command
+            entry.save(update_fields=['state', 'queued_at', 'last_command'])
+            queued += 1
+        return queued
 
 
 def _maybe_finish(run):

@@ -4,12 +4,15 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.utils import timezone
 
+from farm_core.agent_queue import enqueue_open
 from farm_core.circle import (
     confirm_opened,
     continue_folder,
+    finish_entry,
     on_command_finished,
     start_folder,
     stop_run,
+    sync_active_run,
 )
 from farm_core.clock_tick import run_loop, tick
 from farm_core.folder_filter import (
@@ -359,6 +362,54 @@ class CircleTests(TestCase):
                 state=SbcAssignment.STATE_ACTIVE,
             ).exists()
         )
+
+    def test_закрытие_в_пределе_лимита_открывает_следующего(self):
+        start_folder(self.folder, worker=self.worker)
+        confirm_opened('a@b.com')
+        finish_entry('a@b.com')
+        run = FolderRun.objects.get(state=FolderRun.STATE_ACTIVE)
+        self.assertEqual(run.entries.get(email='a@b.com').state, RunEntry.STATE_CLOSED)
+        self.assertEqual(run.entries.get(email='c@d.com').state, RunEntry.STATE_QUEUED)
+        self.assertEqual(AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN).count(), 2)
+
+    def test_при_занятом_лимите_закрытие_не_открывает_следующего(self):
+        third = Account.objects.create(ea_account_id=3, email='e@f.com')
+        replace_members(self.folder, [self.left, self.right, third])
+        self.folder.open_at_a_time = 2
+        self.folder.save(update_fields=['open_at_a_time'])
+        start_folder(self.folder, worker=self.worker)
+        self.folder.open_at_a_time = 1
+        self.folder.save(update_fields=['open_at_a_time'])
+        sync_active_run(self.folder)
+        confirm_opened('a@b.com')
+        finish_entry('a@b.com')
+        run = FolderRun.objects.get(state=FolderRun.STATE_ACTIVE)
+        self.assertEqual(run.entries.get(email='a@b.com').state, RunEntry.STATE_CLOSED)
+        self.assertEqual(run.entries.get(email='c@d.com').state, RunEntry.STATE_QUEUED)
+        self.assertEqual(run.entries.get(email='e@f.com').state, RunEntry.STATE_WAITING)
+        self.assertEqual(AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN).count(), 2)
+        self.assertFalse(AgentCommand.objects.filter(action=AgentCommand.ACTION_CLOSE).exists())
+
+    def test_продолжение_не_открывает_сверх_лимита(self):
+        start_folder(self.folder, worker=self.worker)
+        run = FolderRun.objects.get(state=FolderRun.STATE_ACTIVE)
+        run.state = FolderRun.STATE_STOPPED
+        run.save(update_fields=['state'])
+        result = continue_folder(self.folder, worker=self.worker)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['queued'], 0)
+        run.refresh_from_db()
+        self.assertEqual(run.entries.get(email='a@b.com').state, RunEntry.STATE_QUEUED)
+        self.assertEqual(run.entries.get(email='c@d.com').state, RunEntry.STATE_WAITING)
+        self.assertEqual(AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN).count(), 1)
+
+    def test_ручное_открытие_не_занимает_слот_круга(self):
+        start_folder(self.folder, worker=self.worker)
+        enqueue_open(self.worker, 'hand@x.com')
+        confirm_opened('a@b.com')
+        finish_entry('a@b.com')
+        run = FolderRun.objects.get(state=FolderRun.STATE_ACTIVE)
+        self.assertEqual(run.entries.get(email='c@d.com').state, RunEntry.STATE_QUEUED)
 
     def test_failed_открывает_следующего(self):
         start_folder(self.folder, worker=self.worker)
