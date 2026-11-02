@@ -1,7 +1,8 @@
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
+from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
@@ -12,17 +13,17 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
 from farm_core.agent_queue import enqueue_open, enqueue_stop_chrome
-from farm_core.circle import continue_folder, start_folder, stop_run
+from farm_core.circle import continue_folder, start_folder, stop_run, sync_active_run
 from farm_core.folder_filter import (
     ACCOUNT_FILTER_PRESETS,
     FILTER_PRESETS,
     OPEN_RULES,
     accounts_for_start,
+    add_members,
     conditions_from_keys,
     default_filter,
     filter_template,
     folder_accounts,
-    replace_members,
     search_accounts,
 )
 from farm_core.csv_import import import_csv
@@ -133,19 +134,21 @@ def folder_page(request, folder_id):
             folder.order = request.POST.get('order') or 'email'
             folder.open_rule = request.POST.get('open_rule') or 'all'
             folder.save()
+            sync_active_run(folder)
             message = 'Папка сохранена'
         elif action in ('start', 'continue', 'stop'):
             message = _run_action(folder, action, request.user.username)
         elif action == 'add_selected':
             ids = request.POST.getlist('account_id')
             picked = list(Account.objects.filter(id__in=ids).order_by('email', 'id'))
-            replace_members(folder, picked)
+            _members, added = add_members(folder, picked)
             logger.info(
-                'Состав папки %s заменён: %s',
+                'В папку %s добавлено %s: %s',
                 folder.name,
+                added,
                 [account.email for account in picked],
             )
-            message = 'В папку добавлено: %s' % len(picked)
+            message = 'В папку добавлено: %s' % added
         elif action == 'remove_member':
             folder.members.filter(account_id=request.POST.get('account_id')).delete()
             message = 'Аккаунт снят с папки'
@@ -154,6 +157,15 @@ def folder_page(request, folder_id):
             folder.members.all().delete()
             logger.info('Состав папки %s очищен: снято %s', folder.name, count)
             message = 'Снято с папки: %s' % count
+        elif action == 'delete':
+            run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).first()
+            if run:
+                stop_run(run)
+            name = folder.name
+            folder.delete()
+            logger.info('Папка %s удалена', name)
+            messages.success(request, 'Папка удалена')
+            return redirect('farm-folder-create')
     members = folder_accounts(folder)
     ready, missing_ready = accounts_for_start(folder)
     found, missing, searched = _load_found(request, folder.id)
@@ -223,6 +235,7 @@ def folder_modes_page(request, folder_id):
         folder.modes = modes_from_post(request.POST)
         folder.modes_text = modes_to_text(folder.modes)
         folder.save(update_fields=['modes', 'modes_text'])
+        sync_active_run(folder)
         logger.info(
             'Моды папки %s записаны: %s',
             folder.name,
@@ -245,7 +258,8 @@ def folder_create(request):
             refresh_on_start=True,
         )
         return redirect('farm-folder', folder_id=folder.id)
-    return render(request, 'farm_console/folder_create.html')
+    folders = Folder.objects.annotate(account_count=Count('members')).order_by('name')
+    return render(request, 'farm_console/folder_create.html', {'folders': folders})
 
 
 @login_required
@@ -260,30 +274,58 @@ def schedule_page(request):
                 folder=folder,
                 action=request.POST.get('schedule_action') or Schedule.ACTION_START,
                 days=_read_days(request),
-                start_time=request.POST.get('start_time') or '00:00',
-                stop_time=request.POST.get('stop_time') or '23:59',
+                start_time=_parse_clock(request.POST.get('start_time'), time(9, 0)),
+                stop_time=_parse_clock(request.POST.get('stop_time'), time(23, 0)),
                 enabled=request.POST.get('enabled') == '1',
-                kill_chrome_before=request.POST.get('kill_chrome_before') == '1',
+                kill_chrome_before=True,
             )
             message = 'Расписание создано'
+        elif action == 'save':
+            schedule = get_object_or_404(Schedule, id=request.POST.get('schedule_id'))
+            folder = get_object_or_404(Folder, id=request.POST.get('folder_id'))
+            schedule.name = request.POST.get('name') or folder.name
+            schedule.folder = folder
+            schedule.action = request.POST.get('schedule_action') or Schedule.ACTION_START
+            schedule.days = _read_days(request)
+            schedule.start_time = _parse_clock(request.POST.get('start_time'), schedule.start_time)
+            schedule.stop_time = _parse_clock(request.POST.get('stop_time'), schedule.stop_time)
+            schedule.enabled = request.POST.get('enabled') == '1'
+            schedule.save()
+            logger.info('Расписание %s сохранено', schedule.name)
+            message = 'Расписание сохранено'
         elif action == 'toggle':
             schedule = get_object_or_404(Schedule, id=request.POST.get('schedule_id'))
             schedule.enabled = not schedule.enabled
             schedule.save(update_fields=['enabled'])
+        elif action == 'delete':
+            schedule = get_object_or_404(Schedule, id=request.POST.get('schedule_id'))
+            name = schedule.name
+            schedule.delete()
+            logger.info('Расписание %s удалено', name)
+            message = 'Расписание удалено'
         elif action == 'run_now':
-            folder = get_object_or_404(Folder, id=request.POST.get('folder_id'))
-            result = start_folder(folder, started_by=request.user.username)
+            schedule = get_object_or_404(Schedule, id=request.POST.get('schedule_id'))
+            result = start_folder(schedule.folder, started_by=request.user.username)
             message = _result_text(result)
     schedules = list(Schedule.objects.select_related('folder').all())
     last_fires = {}
     for fire in ScheduleFire.objects.select_related('schedule').order_by('-fired_at')[:200]:
         last_fires.setdefault(fire.schedule_id, fire)
+    open_id = ''
+    if request.method == 'POST' and request.POST.get('action') in ('save', 'toggle'):
+        open_id = str(request.POST.get('schedule_id') or '')
     rows = []
     for item in schedules:
-        rows.append({'schedule': item, 'last_fire': last_fires.get(item.id)})
+        rows.append({
+            'schedule': item,
+            'last_fire': last_fires.get(item.id),
+            'days_text': _days_text(item.days),
+            'open': str(item.id) == open_id,
+        })
     return render(request, 'farm_console/schedule.html', {
         'rows': rows,
         'folders': Folder.objects.order_by('name'),
+        'weekdays': _weekdays(),
         'message': message,
     })
 
@@ -610,7 +652,7 @@ def _run_action(folder, action, username):
 def _folder_row(folder):
     members = folder_accounts(folder)
     ready, missing = accounts_for_start(folder)
-    run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).first()
+    run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).select_related('schedule').first()
     progress = _progress(run) if run else None
     now = timezone.now()
     day = now - timedelta(hours=24)
@@ -627,7 +669,7 @@ def _folder_row(folder):
                 state__in=[RunEntry.STATE_QUEUED, RunEntry.STATE_OPENED],
             ).select_related('last_command').order_by('position')
         )
-    schedule = folder.schedules.filter(enabled=True).order_by('start_time').first()
+    schedule = run.schedule if run is not None else None
     return {
         'folder': folder,
         'count': len(members),
@@ -639,6 +681,7 @@ def _folder_row(folder):
         'fail_count': fails.count(),
         'last_fail': last_fail.error_text if last_fail else '',
         'schedule': schedule,
+        'days_text': _days_text(schedule.days) if schedule else '',
         'unknown_modes': [
             item['key'] for item in parse_modes_text(folder.modes_text) if item.get('unknown')
         ],
@@ -788,3 +831,44 @@ def _read_days(request):
         if item.isdigit():
             days.append(int(item))
     return days
+
+
+def _weekdays():
+    return (
+        (0, 'пн'),
+        (1, 'вт'),
+        (2, 'ср'),
+        (3, 'чт'),
+        (4, 'пт'),
+        (5, 'сб'),
+        (6, 'вс'),
+    )
+
+
+def _days_text(days):
+    labels = dict(_weekdays())
+    numbers = []
+    for item in list(days or []):
+        try:
+            number = int(item)
+        except (TypeError, ValueError):
+            continue
+        if number in labels and number not in numbers:
+            numbers.append(number)
+    if set(numbers) == {0, 1, 2, 3, 4, 5, 6}:
+        return 'каждый день'
+    if not numbers:
+        return 'нет дней'
+    return ' '.join(labels[item] for item in numbers)
+
+
+def _parse_clock(raw, fallback):
+    text = (raw or '').strip()
+    if not text:
+        return fallback
+    for fmt in ('%H:%M', '%H:%M:%S'):
+        try:
+            return datetime.strptime(text, fmt).time()
+        except ValueError:
+            continue
+    return fallback

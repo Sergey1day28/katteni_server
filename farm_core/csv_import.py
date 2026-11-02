@@ -37,6 +37,10 @@ def _import_rows(rows, source_name):
         mapping = header_map
         data_rows = rows[1:]
         start_line = 2
+    elif header_map:
+        mapping = {'email': SHEET_EMAIL_COL, 'totp': SHEET_TOTP_COL}
+        data_rows = rows[1:]
+        start_line = 2
     else:
         mapping = {'email': SHEET_EMAIL_COL, 'totp': SHEET_TOTP_COL}
         data_rows = rows
@@ -99,9 +103,14 @@ def _parse_ea_id(value):
         return None
 
 
+def _looks_like_email(value):
+    text = (value or '').strip()
+    return bool(text) and text != 'None' and '@' in text
+
+
 def _upsert_row(row, mapping, line, unresolved):
     email = _cell(row, mapping.get('email'))
-    if not email or email == 'None':
+    if not _looks_like_email(email):
         unresolved.append({'kind': 'account_no_email', 'line': line})
         return False
     totp = _cell(row, mapping.get('totp'))

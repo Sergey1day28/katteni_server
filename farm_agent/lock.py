@@ -1,3 +1,4 @@
+import ctypes
 import os
 from pathlib import Path
 
@@ -11,7 +12,7 @@ class InstanceLock:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         if self._path.exists():
             old_pid = self._read_pid()
-            if old_pid and _pid_alive(old_pid):
+            if old_pid and pid_alive(old_pid):
                 return False
         self._handle = open(self._path, 'w', encoding='utf-8')
         self._handle.write(str(os.getpid()))
@@ -32,9 +33,29 @@ class InstanceLock:
         return int(text)
 
 
-def _pid_alive(pid):
+def pid_alive(pid):
+    if pid is None or pid <= 0:
+        return False
+    if os.name == 'nt':
+        return _pid_alive_windows(pid)
     try:
         os.kill(pid, 0)
     except OSError:
         return False
     return True
+
+
+def _pid_alive_windows(pid):
+    process_query = 0x1000
+    still_active = 259
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(process_query, False, pid)
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) == 0:
+            return False
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)

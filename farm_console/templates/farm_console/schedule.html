@@ -3,21 +3,32 @@
 {% block content %}
 <h1>Расписание</h1>
 {% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<p class="muted">Нажмите строку, чтобы править скрипт. Время — 24 часа, ЧЧ:ММ. Без галочек дней скрипт не запускается; все семь дней — каждый день.</p>
 <div class="table-wrap">
 <table>
-  <tr><th>Имя</th><th>Папка</th><th>Действие</th><th>Дни</th><th>Старт</th><th>Стоп</th><th>Вкл</th><th>Последний запуск</th><th></th></tr>
-  {% for row in rows %}
   <tr>
+    <th>Имя</th>
+    <th>Папка</th>
+    <th>Действие</th>
+    <th>Дни</th>
+    <th>Старт</th>
+    <th>Стоп</th>
+    <th>Вкл</th>
+    <th>Последний запуск</th>
+    <th></th>
+  </tr>
+  {% for row in rows %}
+  <tr class="schedule-summary{% if row.open %} is-open{% endif %}" data-schedule-id="{{ row.schedule.id }}">
     <td>{{ row.schedule.name }}</td>
     <td>{{ row.schedule.folder.name }}</td>
-    <td>{{ row.schedule.action }}</td>
-    <td>{{ row.schedule.days }}</td>
-    <td>{{ row.schedule.start_time }}</td>
-    <td>{{ row.schedule.stop_time }}</td>
+    <td>{% if row.schedule.action == 'continue' %}продолжить{% else %}запустить{% endif %}</td>
+    <td>{{ row.days_text }}</td>
+    <td>{{ row.schedule.start_time|time:"H:i" }}</td>
+    <td>{{ row.schedule.stop_time|time:"H:i" }}</td>
     <td>{% if row.schedule.enabled %}<span class="badge ok">да</span>{% else %}<span class="muted">нет</span>{% endif %}</td>
     <td>
       {% if row.last_fire %}
-        {{ row.last_fire.kind }} {{ row.last_fire.result }} {{ row.last_fire.fired_at }}
+        {{ row.last_fire.kind }} {{ row.last_fire.result }} {{ row.last_fire.fired_at|date:"d.m.Y H:i" }}
         {% if row.last_fire.error %}<span class="warn">{{ row.last_fire.error }}</span>{% endif %}
       {% else %}<span class="muted">нет</span>{% endif %}
     </td>
@@ -27,11 +38,47 @@
         <button name="action" value="toggle">Вкл/выкл</button>
       </form>
       <form method="post">{% csrf_token %}
-        <input type="hidden" name="folder_id" value="{{ row.schedule.folder_id }}">
+        <input type="hidden" name="schedule_id" value="{{ row.schedule.id }}">
         <button class="btn-primary" name="action" value="run_now">Запустить сейчас</button>
       </form>
     </td>
   </tr>
+  <tr class="schedule-edit{% if row.open %} is-open{% endif %}" data-schedule-id="{{ row.schedule.id }}">
+    <td colspan="9">
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="schedule_id" value="{{ row.schedule.id }}">
+        <p><label>Имя <input name="name" value="{{ row.schedule.name }}"></label></p>
+        <p><label>Папка
+          <select name="folder_id">
+            {% for folder in folders %}
+            <option value="{{ folder.id }}"{% if folder.id == row.schedule.folder_id %} selected{% endif %}>{{ folder.name }}</option>
+            {% endfor %}
+          </select>
+        </label></p>
+        <p><label>Действие
+          <select name="schedule_action">
+            <option value="start"{% if row.schedule.action == 'start' %} selected{% endif %}>запустить</option>
+            <option value="continue"{% if row.schedule.action == 'continue' %} selected{% endif %}>продолжить</option>
+          </select>
+        </label></p>
+        <p>Дни:
+          {% for value, title in weekdays %}
+          <label><input type="checkbox" name="days" value="{{ value }}"{% if value in row.schedule.days %} checked{% endif %}> {{ title }}</label>
+          {% endfor %}
+        </p>
+        <p><label>Старт <input name="start_time" value="{{ row.schedule.start_time|time:'H:i' }}" size="5" placeholder="09:00" inputmode="numeric" autocomplete="off"></label>
+           <label>Стоп <input name="stop_time" value="{{ row.schedule.stop_time|time:'H:i' }}" size="5" placeholder="23:00" inputmode="numeric" autocomplete="off"></label></p>
+        <p><label><input type="checkbox" name="enabled" value="1"{% if row.schedule.enabled %} checked{% endif %}> включён</label></p>
+        <p class="row">
+          <button class="btn-primary" name="action" value="save">Сохранить</button>
+          <button class="btn-danger" name="action" value="delete" onclick="return confirm('Удалить это расписание?')">Удалить</button>
+        </p>
+      </form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="9">Скриптов нет</td></tr>
   {% endfor %}
 </table>
 </div>
@@ -53,19 +100,29 @@
     </select>
   </label></p>
   <p>Дни:
-    <label><input type="checkbox" name="days" value="0"> пн</label>
-    <label><input type="checkbox" name="days" value="1"> вт</label>
-    <label><input type="checkbox" name="days" value="2"> ср</label>
-    <label><input type="checkbox" name="days" value="3"> чт</label>
-    <label><input type="checkbox" name="days" value="4"> пт</label>
-    <label><input type="checkbox" name="days" value="5"> сб</label>
-    <label><input type="checkbox" name="days" value="6"> вс</label>
+    {% for value, title in weekdays %}
+    <label><input type="checkbox" name="days" value="{{ value }}"> {{ title }}</label>
+    {% endfor %}
   </p>
-  <p><label>Старт <input type="time" name="start_time" value="09:00"></label>
-     <label>Стоп <input type="time" name="stop_time" value="23:00"></label></p>
-  <p><label><input type="checkbox" name="enabled" value="1"> включён</label>
-     <label><input type="checkbox" name="kill_chrome_before" value="1"> гасить Chrome</label></p>
+  <p><label>Старт <input name="start_time" value="09:00" size="5" placeholder="09:00" inputmode="numeric" autocomplete="off"></label>
+     <label>Стоп <input name="stop_time" value="23:00" size="5" placeholder="23:00" inputmode="numeric" autocomplete="off"></label>
+     <span class="muted">24 часа, ЧЧ:ММ</span></p>
+  <p><label><input type="checkbox" name="enabled" value="1"> включён</label></p>
   <button type="submit" class="btn-primary">Создать</button>
 </form>
 </div>
+<script>
+(function () {
+  document.querySelectorAll('tr.schedule-summary').forEach(function (row) {
+    row.addEventListener('click', function (event) {
+      if (event.target.closest('form, button, a, input, select, label')) return;
+      var id = row.getAttribute('data-schedule-id');
+      var open = !row.classList.contains('is-open');
+      document.querySelectorAll('tr.schedule-summary, tr.schedule-edit').forEach(function (item) {
+        item.classList.toggle('is-open', open && item.getAttribute('data-schedule-id') === id);
+      });
+    });
+  });
+})();
+</script>
 {% endblock %}

@@ -21,9 +21,7 @@ pip install -r requirements-farm.txt
 python manage.py migrate
 ```
 
-4. Двойной щелчок `start-test.bat` — сервер на `http://127.0.0.1:8000/`. Проверка: `http://127.0.0.1:8000/health/` отвечает JSON `ok`.
-
-Пока нет команд часов и агента, bat поднимает только `runserver`. Пароля в bat нет.
+4. Двойной щелчок `start-test.bat` — сайт на `http://127.0.0.1:8000/` и часы расписания в фоне. Проверка: `http://127.0.0.1:8000/health/` отвечает JSON `ok`. Лог часов: `logs\farm_clock.log`. Агент — отдельно `start-agent-hidden.bat`. Пароля в bat нет.
 
 ## Тесты
 

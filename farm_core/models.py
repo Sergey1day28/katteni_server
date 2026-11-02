@@ -242,6 +242,13 @@ class FolderRun(models.Model):
     modes = models.JSONField(default=list)
     open_at_a_time = models.IntegerField(default=1)
     started_by = models.CharField(max_length=64, default='operator')
+    schedule = models.ForeignKey(
+        'Schedule',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='runs',
+    )
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     end_reason = models.CharField(max_length=100, blank=True)
@@ -331,7 +338,7 @@ class Schedule(models.Model):
     start_time = models.TimeField()
     stop_time = models.TimeField()
     enabled = models.BooleanField(default=True)
-    kill_chrome_before = models.BooleanField(default=False)
+    kill_chrome_before = models.BooleanField(default=True)
 
 
 class ScheduleFire(models.Model):
@@ -344,14 +351,6 @@ class ScheduleFire(models.Model):
     fired_at = models.DateTimeField(auto_now_add=True)
     result = models.CharField(max_length=32)
     error = models.CharField(max_length=300, blank=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['schedule', 'local_date', 'kind'],
-                name='schedule_fire_unique',
-            ),
-        ]
 
 
 class NotifyOutbox(models.Model):

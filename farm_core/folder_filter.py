@@ -91,6 +91,46 @@ def replace_members(folder, accounts):
     return folder_accounts(folder)
 
 
+def add_members(folder, accounts):
+    now = timezone.now()
+    existing = list(folder.members.select_related('account'))
+    already_ids = {member.account_id for member in existing}
+    already_keys = {_account_key(member.account) for member in existing}
+    already_keys.discard(None)
+    seen_ids = set()
+    seen_keys = set()
+    rows = []
+    for account in accounts:
+        key = _account_key(account)
+        if account.id in already_ids or account.id in seen_ids:
+            continue
+        if key and (key in already_keys or key in seen_keys):
+            continue
+        seen_ids.add(account.id)
+        if key:
+            seen_keys.add(key)
+        rows.append(
+            FolderMember(
+                folder=folder,
+                account=account,
+                source='picked',
+                snapshot_at=now,
+            )
+        )
+    FolderMember.objects.bulk_create(rows)
+    return folder_accounts(folder), len(rows)
+
+
+def _account_key(account):
+    email = (account.email or '').strip().lower()
+    if email:
+        return ('email', email)
+    name = (account.name or '').strip().lower()
+    if name:
+        return ('name', name)
+    return None
+
+
 def accounts_for_start(folder, now=None):
     members = folder_accounts(folder)
     rule = folder.open_rule or OPEN_RULE_ALL

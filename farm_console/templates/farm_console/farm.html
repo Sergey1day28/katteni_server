@@ -68,7 +68,9 @@
     </td>
     <td>
       {% if row.schedule %}
-        {{ row.schedule.start_time }}–{{ row.schedule.stop_time }} <span class="muted">{{ row.schedule.days }}</span>
+        {{ row.schedule.name }}
+        {{ row.schedule.start_time|time:"H:i" }}–{{ row.schedule.stop_time|time:"H:i" }}
+        <span class="muted">{{ row.days_text }}</span>
       {% else %}<span class="muted">нет</span>{% endif %}
     </td>
     <td>

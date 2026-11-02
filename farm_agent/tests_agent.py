@@ -63,6 +63,14 @@ class AgentUnitTests(unittest.TestCase):
             self.assertTrue(second.acquire())
             second.release()
 
+    def test_замок_мёртвый_pid_не_держит(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / 'lock'
+            path.write_text('999999', encoding='utf-8')
+            lock = InstanceLock(path)
+            self.assertTrue(lock.acquire())
+            lock.release()
+
     def test_запуск_ярлыка_через_startfile(self):
         calls = []
         restores = []

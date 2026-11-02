@@ -1,4 +1,5 @@
 import json
+from datetime import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -17,9 +18,11 @@ from farm_core.models import (
     SbcAssignment,
     SbcAttempt,
     SbcSet,
+    Schedule,
     Worker,
 )
-from farm_core.folder_filter import default_filter
+from farm_core.circle import start_folder
+from farm_core.folder_filter import default_filter, replace_members
 from farm_core.tokens import hash_token
 
 
@@ -66,6 +69,101 @@ class ConsoleTests(TestCase):
         self.assertEqual(saved['stall_minutes'], 7)
         self.assertTrue(saved['stall_kill_chrome'])
 
+    def test_карточка_папки_удаляет_папку(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        farm = self.client.get('/farm/')
+        self.assertNotContains(farm, 'value="delete"')
+        page = self.client.get('/farm/folders/%s/' % folder.id)
+        self.assertContains(page, 'value="delete"')
+        self.assertContains(page, 'Удалить')
+        response = self.client.post('/farm/folders/%s/' % folder.id, {'action': 'delete'}, follow=True)
+        self.assertRedirects(response, '/farm/folders/new/')
+        self.assertContains(response, 'Папка удалена')
+        self.assertFalse(Folder.objects.filter(id=folder.id).exists())
+        self.assertTrue(Account.objects.filter(email='a@b.com').exists())
+
+    def test_расписание_правится_и_время_24ч(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        created = self.client.post('/farm/schedule/', {
+            'action': 'create',
+            'name': 'утро',
+            'folder_id': str(folder.id),
+            'schedule_action': 'start',
+            'days': ['0', '2'],
+            'start_time': '09:30',
+            'stop_time': '23:00',
+            'enabled': '1',
+        })
+        self.assertEqual(created.status_code, 200)
+        self.assertContains(created, 'Расписание создано')
+        self.assertContains(created, '09:30')
+        self.assertContains(created, '23:00')
+        self.assertContains(created, 'пн')
+        self.assertContains(created, 'ср')
+        self.assertNotContains(created, 'p.m.')
+        self.assertNotContains(created, 'a.m.')
+        self.assertNotContains(created, 'type="time"')
+        self.assertNotContains(created, 'гасить Chrome')
+        self.assertTrue(Schedule.objects.get(name='утро').kill_chrome_before)
+        self.assertContains(created, 'schedule-summary')
+        self.assertContains(created, '<th>Старт</th>')
+        schedule = Schedule.objects.get(name='утро')
+        saved = self.client.post('/farm/schedule/', {
+            'action': 'save',
+            'schedule_id': str(schedule.id),
+            'name': 'вечер',
+            'folder_id': str(folder.id),
+            'schedule_action': 'continue',
+            'days': ['1'],
+            'start_time': '16:00',
+            'stop_time': '22:15',
+            'enabled': '1',
+        })
+        self.assertContains(saved, 'Расписание сохранено')
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.name, 'вечер')
+        self.assertEqual(schedule.action, Schedule.ACTION_CONTINUE)
+        self.assertEqual(schedule.days, [1])
+        self.assertEqual(schedule.start_time.strftime('%H:%M'), '16:00')
+        self.assertEqual(schedule.stop_time.strftime('%H:%M'), '22:15')
+        self.assertTrue(schedule.kill_chrome_before)
+        self.assertContains(saved, '16:00')
+        self.assertContains(saved, 'value="save"')
+        farm = self.client.get('/farm/')
+        self.assertContains(farm, '16:00')
+        self.assertContains(farm, '22:15')
+        self.assertContains(farm, 'вт')
+        deleted = self.client.post('/farm/schedule/', {
+            'action': 'delete',
+            'schedule_id': str(schedule.id),
+        })
+        self.assertContains(deleted, 'Расписание удалено')
+        self.assertFalse(Schedule.objects.filter(id=schedule.id).exists())
+
+    def test_расписание_дни_подпись(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        empty = self.client.post('/farm/schedule/', {
+            'action': 'create',
+            'name': 'пусто',
+            'folder_id': str(folder.id),
+            'schedule_action': 'start',
+            'start_time': '09:00',
+            'stop_time': '23:00',
+            'enabled': '1',
+        })
+        self.assertContains(empty, '<td>нет дней</td>', html=True)
+        all_days = self.client.post('/farm/schedule/', {
+            'action': 'create',
+            'name': 'все',
+            'folder_id': str(folder.id),
+            'schedule_action': 'start',
+            'days': ['0', '1', '2', '3', '4', '5', '6'],
+            'start_time': '10:00',
+            'stop_time': '22:00',
+            'enabled': '1',
+        })
+        self.assertContains(all_days, '<td>каждый день</td>', html=True)
+
     def test_аккаунты_видны(self):
         Account.objects.create(email='rich@x.com', balance=9000)
         Account.objects.create(email='poor@x.com', balance=10)
@@ -82,7 +180,7 @@ class ConsoleTests(TestCase):
         self.assertContains(response, 'Не собрали СБЧ')
         self.assertContains(response, 'id="email-query"')
         self.assertContains(response, 'id="email-search"')
-        self.assertContains(response, 'рынок нет данных')
+        self.assertContains(response, '(рынок нет данных')
         self.assertContains(response, 'набор не назначен')
         self.assertContains(response, 'Открыть')
         self.assertContains(response, 'Открыть выбранные')
@@ -101,6 +199,16 @@ class ConsoleTests(TestCase):
         folder = Folder.objects.get(name='Свои')
         self.assertEqual(folder.filter, default_filter())
 
+    def test_страница_папок_показывает_список_и_форму(self):
+        Folder.objects.create(name='Свои', filter=default_filter())
+        response = self.client.get('/farm/folders/new/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '>Папки<')
+        self.assertContains(response, 'Свои')
+        self.assertContains(response, 'Новая папка')
+        self.assertContains(response, 'name="name"')
+        self.assertNotContains(response, '>Новая папка</a>')
+
     def test_главный_экран_запускает_круг(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter(), open_at_a_time=1)
         account = Account.objects.get(email='a@b.com')
@@ -112,6 +220,38 @@ class ConsoleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'команд')
         self.assertTrue(folder.runs.exists())
+
+    def test_ферма_рисует_только_запущенный_скрипт(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter(), open_at_a_time=1)
+        account = Account.objects.get(email='a@b.com')
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(account.id)},
+        )
+        morning = Schedule.objects.create(
+            name='утро',
+            folder=folder,
+            days=[0, 1, 2, 3, 4, 5, 6],
+            start_time=time(4, 17),
+            stop_time=time(5, 18),
+            enabled=True,
+        )
+        Schedule.objects.create(
+            name='вечер',
+            folder=folder,
+            days=[0, 1, 2, 3, 4, 5, 6],
+            start_time=time(19, 41),
+            stop_time=time(20, 42),
+            enabled=True,
+        )
+        idle = self.client.get('/farm/')
+        self.assertNotContains(idle, '04:17')
+        self.assertNotContains(idle, '19:41')
+        start_folder(folder, started_by='schedule', schedule=morning)
+        live = self.client.get('/farm/')
+        self.assertContains(live, 'утро')
+        self.assertContains(live, '04:17')
+        self.assertNotContains(live, '19:41')
 
     def test_лимит_запросов_не_неизвестный_мод(self):
         Folder.objects.create(
@@ -155,6 +295,45 @@ class ConsoleTests(TestCase):
         self.assertContains(add, 'рынок открыт')
         self.assertNotContains(add, 'без бана')
         self.assertContains(add, 'Снять все')
+
+    def test_добавить_не_стирает_уже_в_папке(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        first = Account.objects.get(email='a@b.com')
+        second = Account.objects.create(ea_account_id=2, email='c@d.com')
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(first.id)},
+        )
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(second.id)},
+        )
+        emails = list(folder.members.values_list('account__email', flat=True).order_by('account__email'))
+        self.assertEqual(emails, ['a@b.com', 'c@d.com'])
+        again = self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(first.id)},
+        )
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(folder.members.count(), 2)
+        self.assertContains(again, 'В папку добавлено: 0')
+
+    def test_добавить_тот_же_email_молча_пропускает(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter())
+        first = Account.objects.get(email='a@b.com')
+        twin = Account.objects.create(ea_account_id=9, email='A@B.com', name='клон')
+        self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(first.id)},
+        )
+        response = self.client.post(
+            '/farm/folders/%s/' % folder.id,
+            {'action': 'add_selected', 'account_id': str(twin.id)},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'В папку добавлено: 0')
+        self.assertEqual(folder.members.count(), 1)
+        self.assertEqual(folder.members.get().account_id, first.id)
 
     def test_снять_все_очищает_папку(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())
@@ -402,6 +581,7 @@ class ConsoleTests(TestCase):
         self.assertNotContains(response, 'Гасить Chrome')
         self.assertContains(response, 'Распространить СБЧ на аккаунты')
         self.assertContains(response, 'Редактировать моды')
+        self.assertContains(response, 'Выбор аккаунтов')
         self.assertContains(response, 'Собрать СБЧ')
         self.assertContains(response, '/farm/folders/%s/modes/' % folder.id)
 
@@ -423,6 +603,28 @@ class ConsoleTests(TestCase):
         folder.refresh_from_db()
         self.assertEqual(folder.modes, [{'key': 'collectSBC', 'value': None}])
         self.assertTrue(folder.assign_sbc)
+
+    def test_сохранение_папки_обновляет_активный_круг(self):
+        folder = Folder.objects.create(
+            name='Свои',
+            filter=default_filter(),
+            open_at_a_time=1,
+            modes=[{'key': 'collectSBC', 'value': None}],
+        )
+        account = Account.objects.get(email='a@b.com')
+        replace_members(folder, [account])
+        start_folder(folder, worker=Worker.objects.get(worker_id='this-pc'))
+        response = self.client.post('/farm/folders/%s/' % folder.id, {
+            'action': 'save',
+            'name': 'Свои',
+            'open_at_a_time': '3',
+            'order': 'email',
+            'assign_sbc': '1',
+        })
+        self.assertEqual(response.status_code, 200)
+        run = folder.runs.get(state='active')
+        self.assertEqual(run.open_at_a_time, 3)
+        self.assertEqual(run.modes, [{'key': 'collectSBC', 'value': None}])
 
     def test_экран_модов_пишет_очередь(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())
@@ -460,6 +662,20 @@ class ConsoleTests(TestCase):
             3,
         )
         self.assertIn('Собрать СБЧ+', folder.modes_text)
+
+    def test_сохранение_модов_обновляет_активный_круг(self):
+        folder = Folder.objects.create(name='Свои', filter=default_filter(), open_at_a_time=1)
+        account = Account.objects.get(email='a@b.com')
+        replace_members(folder, [account])
+        start_folder(folder, worker=Worker.objects.get(worker_id='this-pc'))
+        response = self.client.post('/farm/folders/%s/modes/' % folder.id, {
+            'mode_collectSBC': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        folder.refresh_from_db()
+        run = folder.runs.get(state='active')
+        self.assertEqual(run.modes, folder.modes)
+        self.assertIn('collectSBC', [item['key'] for item in run.modes])
 
     def test_импорт_csv_с_экрана(self):
         page = self.client.get('/farm/import/')

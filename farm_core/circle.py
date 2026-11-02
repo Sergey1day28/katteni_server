@@ -1,3 +1,5 @@
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -8,16 +10,23 @@ from farm_core.models import (
     FolderRun,
     NotifyOutbox,
     RunEntry,
+    SbcAssignment,
 )
 from farm_core.sbc import assign_set, default_sbc_set
 from farm_core.workers import ensure_configured_worker
 
+logger = logging.getLogger(__name__)
 
-def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
+_OPEN_ENTRY_STATES = (
+    RunEntry.STATE_WAITING,
+    RunEntry.STATE_QUEUED,
+    RunEntry.STATE_OPENED,
+)
+
+
+def start_folder(folder, started_by='operator', worker=None, kill_chrome=True, schedule=None):
     worker = worker or ensure_configured_worker()
     now = timezone.now()
-    if FolderRun.objects.filter(folder=folder, state=FolderRun.STATE_ACTIVE).exists():
-        return {'ok': False, 'error': {'code': 'running', 'message': 'Круг этой папки уже идёт'}}
     if not worker.enabled:
         return {'ok': False, 'error': {'code': 'worker_disabled', 'message': 'ПК выключен'}}
     selected, missing = _members_for_start(folder, now)
@@ -27,16 +36,17 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
             'error': {'code': 'empty', 'message': '0 аккаунтов'},
             'missing_data': missing,
         }
-    busy = accounts_in_other_active_run([account.id for account in selected])
-    ready = [account for account in selected if account.id not in busy]
-    skipped = [account for account in selected if account.id in busy]
-    if not ready:
-        return {
-            'ok': False,
-            'error': {'code': 'all_busy', 'message': 'Все аккаунты уже в другом круге'},
-            'skipped': [account.email for account in skipped],
-        }
     with transaction.atomic():
+        _stop_active_runs()
+        busy = accounts_in_other_active_run([account.id for account in selected])
+        ready = [account for account in selected if account.id not in busy]
+        skipped = [account for account in selected if account.id in busy]
+        if not ready:
+            return {
+                'ok': False,
+                'error': {'code': 'all_busy', 'message': 'Все аккаунты уже в другом круге'},
+                'skipped': [account.email for account in skipped],
+            }
         run = FolderRun.objects.create(
             folder=folder,
             state=FolderRun.STATE_ACTIVE,
@@ -44,6 +54,7 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
             modes=list(folder.modes or []),
             open_at_a_time=folder.open_at_a_time,
             started_by=started_by,
+            schedule=schedule,
         )
         entries = []
         for index, account in enumerate(_ordered(ready, folder.order)):
@@ -60,8 +71,15 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
                 sbc_set = default_sbc_set()
                 if sbc_set is not None:
                     assign_set(account, sbc_set, run=run)
-        enqueue_stop_chrome(worker, run=run)
+        if kill_chrome:
+            enqueue_stop_chrome(worker, run=run)
         opened = _queue_next(run, worker, folder.open_at_a_time)
+        logger.info(
+            'Запущен круг папки %s, аккаунтов %s, очередь %s',
+            folder.name,
+            len(entries),
+            opened,
+        )
     return {
         'ok': True,
         'data': {
@@ -74,7 +92,7 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=False):
     }
 
 
-def continue_folder(folder, started_by='operator', worker=None):
+def continue_folder(folder, started_by='operator', worker=None, schedule=None):
     worker = worker or ensure_configured_worker()
     run = (
         FolderRun.objects.filter(folder=folder)
@@ -89,13 +107,55 @@ def continue_folder(folder, started_by='operator', worker=None):
     if not leftovers:
         return {'ok': False, 'error': {'code': 'nothing', 'message': 'Нет незакрытых записей'}}
     with transaction.atomic():
+        _stop_active_runs()
         run.state = FolderRun.STATE_ACTIVE
         run.ended_at = None
         run.end_reason = ''
         run.started_by = started_by
-        run.save(update_fields=['state', 'ended_at', 'end_reason', 'started_by'])
+        run.schedule = schedule
+        run.save(update_fields=['state', 'ended_at', 'end_reason', 'started_by', 'schedule'])
+        _apply_run_settings(run, folder)
+        if folder.assign_sbc:
+            _assign_sbc(run, [entry.account for entry in leftovers if entry.account_id])
         queued = _queue_next(run, worker, run.open_at_a_time)
     return {'ok': True, 'data': {'run_id': run.id, 'queued': queued, 'total': len(leftovers)}}
+
+
+def sync_active_run(folder):
+    run = folder.runs.filter(state=FolderRun.STATE_ACTIVE).first()
+    if run is None:
+        return
+    _apply_run_settings(run, folder)
+    if folder.assign_sbc:
+        accounts = [
+            entry.account
+            for entry in run.entries.filter(state__in=_OPEN_ENTRY_STATES).select_related('account')
+            if entry.account_id
+        ]
+        _assign_sbc(run, accounts)
+    logger.info('Активный круг папки %s обновлён из карточки', folder.name)
+
+
+def _apply_run_settings(run, folder):
+    run.play_mode = folder.play_mode
+    run.modes = list(folder.modes or [])
+    run.open_at_a_time = folder.open_at_a_time
+    run.save(update_fields=['play_mode', 'modes', 'open_at_a_time'])
+
+
+def _assign_sbc(run, accounts):
+    sbc_set = default_sbc_set()
+    if sbc_set is None:
+        return
+    for account in accounts:
+        if account is None:
+            continue
+        if SbcAssignment.objects.filter(
+            account=account,
+            state=SbcAssignment.STATE_ACTIVE,
+        ).exists():
+            continue
+        assign_set(account, sbc_set, run=run)
 
 
 def stop_run(run):
@@ -105,12 +165,21 @@ def stop_run(run):
         run.ended_at = now
         run.end_reason = 'stopped'
         run.save(update_fields=['state', 'ended_at', 'end_reason'])
-        run.entries.filter(state__in=[RunEntry.STATE_WAITING, RunEntry.STATE_QUEUED]).update(
+        run.entries.filter(state__in=_OPEN_ENTRY_STATES).update(
             state=RunEntry.STATE_CANCELLED,
             closed_at=now,
         )
         cancel_pending(run=run)
     return {'ok': True, 'data': {'run_id': run.id}}
+
+
+def _stop_active_runs():
+    runs = list(
+        FolderRun.objects.filter(state=FolderRun.STATE_ACTIVE).select_related('folder')
+    )
+    for run in runs:
+        logger.info('Останавливаю круг папки %s: на ПК одна папка', run.folder.name)
+        stop_run(run)
 
 
 def confirm_opened(email):
@@ -190,6 +259,16 @@ def on_command_finished(command):
     entry = command.entry
     run = command.run
     if entry is None or run is None:
+        return
+    run.refresh_from_db()
+    entry.refresh_from_db()
+    if run.state != FolderRun.STATE_ACTIVE:
+        return
+    if entry.state in (
+        RunEntry.STATE_CLOSED,
+        RunEntry.STATE_FAILED,
+        RunEntry.STATE_CANCELLED,
+    ):
         return
     if command.state == AgentCommand.STATE_FAILED:
         entry.state = RunEntry.STATE_FAILED

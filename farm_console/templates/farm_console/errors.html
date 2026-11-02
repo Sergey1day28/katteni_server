@@ -32,7 +32,7 @@
   <tr><th>Когда</th><th>Скрипт</th><th>Папка</th><th>Вид</th><th>Причина</th></tr>
   {% for item in schedule_errors %}
   <tr>
-    <td>{{ item.fired_at }}</td>
+    <td>{{ item.fired_at|date:"d.m.Y H:i" }}</td>
     <td>{{ item.schedule.name }}</td>
     <td>{{ item.schedule.folder.name }}</td>
     <td>{{ item.kind }}</td>

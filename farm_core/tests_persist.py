@@ -134,6 +134,24 @@ class PersistTests(TestCase):
             self.assertEqual(account.login_secret.totp_seed, 'JBSWY3DPEHPK3PXP')
             self.assertEqual(report.unresolved, [])
 
+    def test_csv_заголовок_name_не_становится_аккаунтом(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / 'sheet.csv'
+            header = ['Name'] + [''] * 9 + ['TOTP']
+            data = ['real@x.com'] + [''] * 9 + ['JBSWY3DPEHPK3PXP']
+            junk = ['Name'] + [''] * 10
+            path.write_text(
+                ','.join(header) + '\n' + ','.join(data) + '\n' + ','.join(junk) + '\n',
+                encoding='utf-8',
+            )
+            report = import_csv(path)
+            self.assertFalse(Account.objects.filter(email__iexact='Name').exists())
+            account = Account.objects.get(email='real@x.com')
+            self.assertEqual(account.login_secret.totp_seed, 'JBSWY3DPEHPK3PXP')
+            self.assertEqual(report.summary['accounts'], 1)
+            self.assertEqual(len(report.unresolved), 1)
+            self.assertEqual(report.unresolved[0]['kind'], 'account_no_email')
+
     def test_csv_без_email_в_спорные(self):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / 'bad.csv'

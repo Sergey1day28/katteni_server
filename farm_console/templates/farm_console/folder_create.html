@@ -1,8 +1,25 @@
 {% extends "farm_console/base.html" %}
-{% block title %}Новая папка{% endblock %}
+{% block title %}Папки{% endblock %}
 {% block content %}
-<h1>Новая папка</h1>
+<h1>Папки</h1>
+<div class="table-wrap">
+<table>
+  <tr>
+    <th>Папка</th>
+    <th>Аккаунтов</th>
+  </tr>
+  {% for folder in folders %}
+  <tr>
+    <td><a href="{% url 'farm-folder' folder.id %}">{{ folder.name }}</a></td>
+    <td>{{ folder.account_count }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="2">Папок нет</td></tr>
+  {% endfor %}
+</table>
+</div>
 <div class="card">
+<h2>Новая папка</h2>
 <form method="post">
   {% csrf_token %}
   <p><label>Имя <input name="name" required></label></p>

@@ -76,6 +76,11 @@
     th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: #141822; }
     tr:last-child td { border-bottom: 0; }
     tbody tr:hover td { background: #1c2230; }
+    tr.schedule-summary { cursor: pointer; }
+    tr.schedule-summary.is-open td { background: #1c2230; }
+    tr.schedule-edit { display: none; }
+    tr.schedule-edit.is-open { display: table-row; }
+    tr.schedule-edit td { background: var(--bg-elev); }
     .ok, .warn, .danger { font-weight: 600; }
     .ok { color: var(--ok); }
     .warn { color: var(--warn); }
@@ -213,7 +218,7 @@
 <nav class="top">
   <span class="brand">Пульт</span>
   <a href="{% url 'farm-home' %}"{% if request.resolver_match.url_name == 'farm-home' %} class="is-active"{% endif %}>Ферма</a>
-  <a href="{% url 'farm-folder-create' %}"{% if request.resolver_match.url_name == 'farm-folder-create' %} class="is-active"{% endif %}>Новая папка</a>
+  <a href="{% url 'farm-folder-create' %}"{% if request.resolver_match.url_name == 'farm-folder-create' or request.resolver_match.url_name == 'farm-folder' or request.resolver_match.url_name == 'farm-folder-search' or request.resolver_match.url_name == 'farm-folder-modes' %} class="is-active"{% endif %}>Папки</a>
   <a href="{% url 'farm-schedule' %}"{% if request.resolver_match.url_name == 'farm-schedule' %} class="is-active"{% endif %}>Расписание</a>
   <a href="{% url 'farm-pc' %}"{% if request.resolver_match.url_name == 'farm-pc' %} class="is-active"{% endif %}>ПК</a>
   <a href="{% url 'farm-accounts' %}"{% if request.resolver_match.url_name == 'farm-accounts' or request.resolver_match.url_name == 'farm-account' %} class="is-active"{% endif %}>Аккаунты</a>
@@ -229,6 +234,11 @@
   {% endif %}
 </nav>
 <main class="page">
+{% if messages %}
+  {% for message in messages %}
+  <div class="msg">{{ message }}</div>
+  {% endfor %}
+{% endif %}
 {% endblock %}
 {% block content %}{% endblock %}
 {% block chrome_end %}

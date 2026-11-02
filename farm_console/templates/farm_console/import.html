@@ -13,7 +13,7 @@
   {% csrf_token %}
   <input type="hidden" name="import_kind" value="csv">
   <p><label>CSV <input type="file" name="csv_file" accept=".csv,text/csv"></label></p>
-  <p class="muted">Колонки email и totp, пароль не сохраняется. Без заголовка — как лист «Акки ЕА»: A email, K TOTP. EA id допишется при первом входе в профиль.</p>
+  <p class="muted">Колонки email и totp, пароль не сохраняется. Без колонки email — как лист «Акки ЕА»: A почта, K TOTP. Строка заголовка (Name и другие названия колонок) в базу не попадает. В email пишется только значение с @. EA id допишется при первом входе в профиль.</p>
   <button type="submit" class="btn-primary">Импортировать CSV</button>
 </form>
 {% if report %}
