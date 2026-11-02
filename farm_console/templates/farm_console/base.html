@@ -165,13 +165,75 @@
     }
     .mode-row label { color: var(--text); }
     .mode-row input[type="number"] { width: 72px; }
+    .mode-conditions-wrap {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows .22s ease;
+    }
+    .mode-conditions-wrap.is-open { grid-template-rows: 1fr; }
     .mode-conditions {
-      margin: 8px 0 0 12px;
-      padding: 10px 12px;
-      border: 1px solid var(--line);
+      min-height: 0;
+      overflow: hidden;
+      margin: 0 0 0 12px;
+      padding: 0 12px;
+      border: 0 solid var(--line);
       border-radius: 8px;
     }
-    .mode-conditions:disabled { opacity: .45; }
+    .mode-conditions-wrap.is-open .mode-conditions {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-width: 1px;
+    }
+    .mode-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+    .mode-tools button { padding: 4px 8px; }
+    .mode-head { display: flex; gap: 8px; align-items: flex-start; }
+    .mode-drag {
+      flex: 0 0 auto;
+      margin-top: 2px;
+      padding: 6px 7px;
+      color: var(--muted);
+      cursor: grab;
+      user-select: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      line-height: 1;
+    }
+    .mode-drag:active { cursor: grabbing; }
+    .mode-head-main { flex: 1 1 auto; min-width: 0; }
+    [data-action-card] {
+      border-left: 3px solid transparent;
+      opacity: .62;
+    }
+    [data-action-card].is-on {
+      opacity: 1;
+      border-left-color: var(--primary);
+      background: #1c2740;
+      box-shadow: 0 0 0 1px #2d4a78;
+    }
+    [data-action-card].is-on .mode-row strong {
+      color: #fff;
+      font-size: 16px;
+    }
+    [data-action-card].is-dragging { opacity: .45; }
+    [data-action-card].is-drop-before { box-shadow: inset 0 3px 0 var(--primary); }
+    [data-action-card].is-drop-after { box-shadow: inset 0 -3px 0 var(--primary); }
+    .mode-pills { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .mode-pill {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border-left: 3px solid var(--primary);
+      background: #1c2740;
+      box-shadow: 0 0 0 1px #2d4a78;
+    }
+    .mode-pill-title { font-weight: 650; color: #fff; }
+    .mode-pill-subs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .mode-pill-sub {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #243656;
+      color: var(--text);
+      font-size: 12px;
+    }
     .modes-foot {
       position: sticky;
       bottom: 0;

@@ -20,41 +20,54 @@
       </p>
       {% endfor %}
     </div>
-    <div>
+    <div id="mode-queue">
       <h2>Очередь</h2>
       {% for action in editor.actions %}
-      <div class="card" data-action-card>
+      <div class="card{% if action.checked %} is-on{% endif %}" data-action-card data-key="{{ action.key }}" data-slot="{{ action.slot }}">
+        <input type="hidden" name="queue_slot" value="{{ action.slot }}" data-slot-input>
+        <input type="hidden" name="queue_key_{{ action.slot }}" value="{{ action.key }}">
+        <div class="mode-head">
+          <span class="mode-drag" data-drag-handle title="Перетащить">⋮⋮</span>
+          <div class="mode-head-main">
+        <div class="mode-tools">
+          <button type="button" data-duplicate>Ещё раз</button>
+          <button type="button" data-remove hidden>Убрать</button>
+        </div>
         <p class="mode-row">
           <label>
-            <input type="checkbox" name="mode_{{ action.key }}" value="1" data-action-toggle{% if action.checked %} checked{% endif %}>
+            <input type="checkbox" name="mode_{{ action.slot }}_{{ action.key }}" value="1" data-action-toggle{% if action.checked %} checked{% endif %}>
             <strong>{{ action.title }}</strong>
           </label>
           {% if action.needs_value %}
-          <input type="number" name="mode_value_{{ action.key }}" value="{{ action.value|default_if_none:'' }}" min="0">
+          <input type="number" name="mode_value_{{ action.slot }}_{{ action.key }}" value="{{ action.value|default_if_none:'' }}" min="0" data-sync="{{ action.key }}" data-sync-kind="value">
           {% endif %}
         </p>
         {% if action.scope or action.conditions %}
+        <div class="mode-conditions-wrap{% if action.checked %} is-open{% endif %}">
         <fieldset class="mode-conditions" data-conditions{% if not action.checked %} disabled{% endif %}>
           {% if action.scope %}
           <p class="mode-row">
             {% for option in editor.scope_options %}
-            <label><input type="radio" name="sbc_scope" value="{{ option.value }}"{% if editor.sbc_scope == option.value %} checked{% endif %}> {{ option.title }}</label>
+            <label><input type="radio" name="sbc_scope_{{ action.slot }}" value="{{ option.value }}" data-sync="sbc_scope" data-sync-kind="scope"{% if action.sbc_scope == option.value %} checked{% endif %}> {{ option.title }}</label>
             {% endfor %}
           </p>
           {% endif %}
           {% for item in action.conditions %}
           <p class="mode-row">
             <label>
-              <input type="checkbox" name="mode_{{ item.key }}" value="1"{% if item.checked %} checked{% endif %}>
+              <input type="checkbox" name="mode_{{ action.slot }}_{{ item.key }}" value="1" data-sync="{{ item.key }}" data-sync-kind="check"{% if item.checked %} checked{% endif %}>
               {{ item.title }}
             </label>
             {% if item.needs_value %}
-            <input type="number" name="mode_value_{{ item.key }}" value="{{ item.value|default_if_none:'' }}" min="0">
+            <input type="number" name="mode_value_{{ action.slot }}_{{ item.key }}" value="{{ item.value|default_if_none:'' }}" min="0" data-sync="{{ item.key }}" data-sync-kind="value">
             {% endif %}
           </p>
           {% endfor %}
         </fieldset>
+        </div>
         {% endif %}
+          </div>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -66,16 +79,206 @@
 </form>
 <script>
 (function () {
+  var form = document.getElementById('modes-form');
+  var queue = document.getElementById('mode-queue');
+
   function syncCards() {
     document.querySelectorAll('[data-action-card]').forEach(function (card) {
       var toggle = card.querySelector('[data-action-toggle]');
+      if (!toggle) return;
+      card.classList.toggle('is-on', toggle.checked);
       var box = card.querySelector('[data-conditions]');
-      if (!toggle || !box) return;
+      if (!box) return;
       box.disabled = !toggle.checked;
+      if (box.parentElement) box.parentElement.classList.toggle('is-open', toggle.checked);
     });
   }
-  document.getElementById('modes-form').addEventListener('change', syncCards);
+
+  function syncRemove() {
+    var counts = {};
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      var key = card.getAttribute('data-key');
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      var button = card.querySelector('[data-remove]');
+      if (!button) return;
+      button.hidden = (counts[card.getAttribute('data-key')] || 0) < 2;
+    });
+  }
+
+  function nextSlot() {
+    var max = 0;
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      var slot = parseInt(card.getAttribute('data-slot'), 10) || 0;
+      if (slot > max) max = slot;
+    });
+    return max + 1;
+  }
+
+  function renameSlot(root, fromSlot, toSlot) {
+    var pattern = new RegExp('_' + fromSlot + '(?=(_|$))', 'g');
+    root.querySelectorAll('[name]').forEach(function (el) {
+      el.name = el.name.replace(pattern, '_' + toSlot);
+    });
+    var slotInput = root.querySelector('[data-slot-input]');
+    if (slotInput) slotInput.value = String(toSlot);
+    root.setAttribute('data-slot', String(toSlot));
+  }
+
+  queue.addEventListener('click', function (event) {
+    var button = event.target.closest('button');
+    if (!button) return;
+    var card = button.closest('[data-action-card]');
+    if (!card) return;
+    if (button.hasAttribute('data-duplicate')) {
+      var copy = card.cloneNode(true);
+      renameSlot(copy, card.getAttribute('data-slot'), nextSlot());
+      var toggle = copy.querySelector('[data-action-toggle]');
+      if (toggle) toggle.checked = true;
+      card.after(copy);
+    } else if (button.hasAttribute('data-remove')) {
+      card.remove();
+    } else {
+      return;
+    }
+    syncCards();
+    syncRemove();
+  });
+
+  function sameKind(peer, input) {
+    return (peer.getAttribute('data-sync-kind') || '') === (input.getAttribute('data-sync-kind') || '');
+  }
+
+  function mirrorFrom(card, input) {
+    if (!input || !input.hasAttribute('data-sync')) return;
+    var mark = input.getAttribute('data-sync');
+    var key = card.getAttribute('data-key');
+    queue.querySelectorAll('[data-action-card]').forEach(function (other) {
+      if (other === card || other.getAttribute('data-key') !== key) return;
+      other.querySelectorAll('[data-sync]').forEach(function (peer) {
+        if (peer.getAttribute('data-sync') !== mark || !sameKind(peer, input)) return;
+        if (peer.type === 'radio') {
+          peer.checked = input.checked && peer.value === input.value;
+        } else if (peer.type === 'checkbox') {
+          peer.checked = input.checked;
+        } else {
+          peer.value = input.value;
+        }
+      });
+    });
+  }
+
+  form.addEventListener('change', function (event) {
+    syncCards();
+    var card = event.target.closest ? event.target.closest('[data-action-card]') : null;
+    if (card) mirrorFrom(card, event.target);
+  });
+  form.addEventListener('input', function (event) {
+    if (event.target.type !== 'number') return;
+    var card = event.target.closest ? event.target.closest('[data-action-card]') : null;
+    if (card) mirrorFrom(card, event.target);
+  });
+  var dragged = null;
+  var pointerY = null;
+  var scrollFrame = null;
+
+  function stopAutoScroll() {
+    pointerY = null;
+    if (scrollFrame) {
+      window.cancelAnimationFrame(scrollFrame);
+      scrollFrame = null;
+    }
+  }
+
+  function autoScrollStep() {
+    scrollFrame = null;
+    if (!dragged || pointerY == null) return;
+    var edge = 80;
+    var height = window.innerHeight;
+    var speed = 0;
+    if (pointerY < edge) {
+      speed = -Math.max(4, Math.round((edge - pointerY) / 3));
+    } else if (pointerY > height - edge) {
+      speed = Math.max(4, Math.round((pointerY - (height - edge)) / 3));
+    }
+    if (!speed) return;
+    window.scrollBy(0, speed);
+    scrollFrame = window.requestAnimationFrame(autoScrollStep);
+  }
+
+  function noteDragPointer(event) {
+    if (!dragged) return;
+    pointerY = event.clientY;
+    if (!scrollFrame) scrollFrame = window.requestAnimationFrame(autoScrollStep);
+  }
+
+  document.addEventListener('dragover', noteDragPointer);
+
+  function clearDropMarks() {
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      card.classList.remove('is-drop-before', 'is-drop-after');
+    });
+  }
+
+  queue.addEventListener('mousedown', function (event) {
+    var handle = event.target.closest ? event.target.closest('[data-drag-handle]') : null;
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      card.draggable = false;
+    });
+    if (!handle) return;
+    var card = handle.closest('[data-action-card]');
+    if (card) card.draggable = true;
+  });
+
+  queue.addEventListener('dragstart', function (event) {
+    var card = event.target.closest ? event.target.closest('[data-action-card]') : null;
+    if (!card || !card.draggable) {
+      event.preventDefault();
+      return;
+    }
+    dragged = card;
+    card.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', card.getAttribute('data-slot') || '');
+  });
+
+  queue.addEventListener('dragover', function (event) {
+    if (!dragged) return;
+    var card = event.target.closest ? event.target.closest('[data-action-card]') : null;
+    if (!card || card === dragged) return;
+    event.preventDefault();
+    var rect = card.getBoundingClientRect();
+    var before = event.clientY < rect.top + rect.height / 2;
+    clearDropMarks();
+    card.classList.add(before ? 'is-drop-before' : 'is-drop-after');
+  });
+
+  queue.addEventListener('drop', function (event) {
+    if (!dragged) return;
+    var card = event.target.closest ? event.target.closest('[data-action-card]') : null;
+    event.preventDefault();
+    if (card && card !== dragged) {
+      var rect = card.getBoundingClientRect();
+      var before = event.clientY < rect.top + rect.height / 2;
+      if (before) queue.insertBefore(dragged, card);
+      else queue.insertBefore(dragged, card.nextElementSibling);
+    }
+    clearDropMarks();
+  });
+
+  queue.addEventListener('dragend', function () {
+    if (dragged) dragged.classList.remove('is-dragging');
+    queue.querySelectorAll('[data-action-card]').forEach(function (card) {
+      card.draggable = false;
+    });
+    clearDropMarks();
+    stopAutoScroll();
+    dragged = null;
+  });
+
   syncCards();
+  syncRemove();
 })();
 </script>
 {% endblock %}

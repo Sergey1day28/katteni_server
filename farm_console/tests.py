@@ -200,6 +200,7 @@ class ConsoleTests(TestCase):
         self.assertEqual(response.status_code, 302)
         folder = Folder.objects.get(name='Свои')
         self.assertEqual(folder.filter, default_filter())
+        self.assertEqual(folder.modes, [{'key': 'freeAccountSolving', 'value': None}])
 
     def test_страница_папок_показывает_список_и_форму(self):
         Folder.objects.create(name='Свои', filter=default_filter())
@@ -626,6 +627,7 @@ class ConsoleTests(TestCase):
         self.assertContains(response, 'Редактировать моды')
         self.assertContains(response, 'Выбор аккаунтов')
         self.assertContains(response, 'Собрать СБЧ')
+        self.assertContains(response, 'mode-pill')
         self.assertContains(response, '/farm/folders/%s/modes/' % folder.id)
 
     def test_сохранение_папки_не_затирает_моды(self):
@@ -678,6 +680,14 @@ class ConsoleTests(TestCase):
         self.assertContains(page, 'Собрать все сбч')
         self.assertNotContains(page, 'не выбран')
         self.assertContains(page, 'Открыть паки')
+        self.assertContains(page, 'Проверить открылся ли рынок')
+        self.assertContains(page, 'Собрать задания')
+        self.assertContains(page, 'Разобрать нераспределенные')
+        self.assertContains(page, 'class="mode-conditions-wrap"')
+        self.assertContains(page, 'Ещё раз')
+        self.assertContains(page, 'Перетащить')
+        self.assertNotContains(page, '>Вверх<')
+        self.assertNotContains(page, '>Вниз<')
         response = self.client.post('/farm/folders/%s/modes/' % folder.id, {
             'mode_collectSBC': '1',
             'mode_useBronze200ForSbc': '1',

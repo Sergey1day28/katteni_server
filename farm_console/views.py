@@ -28,7 +28,13 @@ from farm_core.folder_filter import (
 )
 from farm_core.csv_import import import_csv
 from farm_core.legacy_import import import_legacy
-from farm_core.mode_catalog import editor_state, modes_from_post, modes_preview, modes_to_text
+from farm_core.mode_catalog import (
+    default_folder_modes,
+    editor_state,
+    modes_from_post,
+    modes_preview,
+    modes_to_text,
+)
 from farm_core.mode_labels import parse_modes_text
 from farm_core.models import (
     Account,
@@ -252,10 +258,13 @@ def folder_modes_page(request, folder_id):
 @require_http_methods(['GET', 'POST'])
 def folder_create(request):
     if request.method == 'POST':
+        modes = default_folder_modes()
         folder = Folder.objects.create(
             name=request.POST.get('name') or 'Папка',
             filter=default_filter(),
             refresh_on_start=True,
+            modes=modes,
+            modes_text=modes_to_text(modes),
         )
         return redirect('farm-folder', folder_id=folder.id)
     folders = Folder.objects.annotate(account_count=Count('members')).order_by('name')
@@ -616,10 +625,13 @@ def sbc_week_page(request):
             message = 'Не вышло создать папку: нужно имя СБЧ или число'
         else:
             name = request.POST.get('name') or _sbc_folder_name(action, extra)
+            modes = default_folder_modes()
             folder = Folder.objects.create(
                 name=name,
                 filter=applied,
                 refresh_on_start=True,
+                modes=modes,
+                modes_text=modes_to_text(modes),
             )
             return redirect('farm-folder', folder_id=folder.id)
     names = (
