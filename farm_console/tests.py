@@ -15,10 +15,14 @@ from farm_core.models import (
     AgentCommand,
     Folder,
     MarketFilter,
+    MarketFilterList,
     SbcAssignment,
     SbcAttempt,
     SbcSet,
+    SbcSetItem,
+    SbcTemplate,
     Schedule,
+    SnipeSettingsDoc,
     Worker,
 )
 from farm_core.circle import start_folder
@@ -587,6 +591,161 @@ class ConsoleTests(TestCase):
         self.assertFalse(
             SbcAssignment.objects.filter(account=account, state=SbcAssignment.STATE_ACTIVE).exists()
         )
+
+    def _api(self, route, payload):
+        return self.client.post(
+            '/api/v1/%s' % route,
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+
+    def test_форма_настроек_снайпа_пишет_preferences(self):
+        SnipeSettingsDoc.write(json.dumps({
+            'mode': 'manual',
+            'preferences': {'requestPauseFrom': 1, 'extraFlag': 7},
+        }), updated_by='op')
+        response = self.client.post('/farm/filters/', {
+            'action': 'save_snipe_form',
+            'pause_from': '700',
+            'pause_to': '900',
+            'time_from': '19:59',
+            'time_to': '07:00',
+            'long_pause': '60',
+            'requests_before_pause': '50',
+            'purchases_stop': '0',
+            'result_stop': '22',
+            'market': 'below',
+            'change_min_bin': '1',
+            'auto_sell': '1',
+            'filters_from_server': '1',
+        })
+        self.assertContains(response, 'Настройки снайпа сохранены')
+        self.assertContains(response, 'value="700"')
+        doc = SnipeSettingsDoc.current()
+        self.assertEqual(doc.version, 2)
+        preferences = json.loads(doc.payload)['preferences']
+        self.assertEqual(preferences['requestPauseFrom'], 700)
+        self.assertEqual(preferences['timeSnipeFrom'], 19)
+        self.assertEqual(preferences['timeSnipeFromMin'], 59)
+        self.assertEqual(preferences['marketPrice'], 'below')
+        self.assertEqual(preferences['changeMinBin'], 1)
+        self.assertEqual(preferences['changeFilters'], 0)
+        self.assertEqual(preferences['extraFlag'], 7)
+        fresh = self._api('session/start', {
+            'email': 'a@b.com',
+            'client': {'engine': 'core-v2', 'version': '1', 'known_modes': []},
+            'snipe_settings_version': 0,
+        })
+        self.assertTrue(fresh.json()['ok'])
+        delivered = fresh.json()['data']['snipe_settings']
+        self.assertEqual(delivered['version'], 2)
+        self.assertEqual(json.loads(delivered['payload'])['preferences']['requestPauseFrom'], 700)
+        again = self._api('session/start', {
+            'email': 'a@b.com',
+            'client': {'engine': 'core-v2', 'version': '1', 'known_modes': []},
+            'snipe_settings_version': 2,
+        })
+        self.assertIsNone(again.json()['data']['snipe_settings'])
+
+    def test_правка_строки_рынка_не_затирает_соседей(self):
+        keep = MarketFilter.objects.create(
+            title='keep',
+            payload={'title': 'keep', 'value': {'minBuy': 1}, 'market': 'equal', 'changeMinBin': False},
+            position=1,
+        )
+        edit = MarketFilter.objects.create(
+            title='edit',
+            payload={'title': 'edit', 'value': {'minBuy': 9}, 'market': 'equal', 'changeMinBin': False},
+            position=0,
+        )
+        response = self.client.post('/farm/filters/', {
+            'action': 'save_market',
+            'filter_id': str(edit.id),
+            'position': '5',
+            'market': 'below',
+            'change_min_bin': '1',
+            'enabled': '1',
+        })
+        self.assertContains(response, 'Фильтр «edit» сохранён')
+        keep.refresh_from_db()
+        edit.refresh_from_db()
+        self.assertEqual(keep.payload['value']['minBuy'], 1)
+        self.assertEqual(keep.payload['market'], 'equal')
+        self.assertEqual(edit.payload['market'], 'below')
+        self.assertTrue(edit.payload['changeMinBin'])
+        self.assertEqual(edit.payload['value']['minBuy'], 9)
+        self.assertEqual(edit.position, 5)
+        self.assertGreater(MarketFilterList.objects.get(pk=1).version, 1)
+        listed = self._api('market/filters', {})
+        titles = [item['title'] for item in listed.json()['data']['items']]
+        self.assertEqual(titles, ['keep', 'edit'])
+        self.assertEqual(listed.json()['data']['items'][1]['payload']['market'], 'below')
+        self.client.post('/farm/filters/', {
+            'action': 'save_market',
+            'filter_id': str(edit.id),
+            'position': '5',
+            'market': 'below',
+        })
+        listed = self._api('market/filters', {})
+        titles = [item['title'] for item in listed.json()['data']['items']]
+        self.assertEqual(titles, ['keep'])
+
+    def test_правка_рейтинга_сбч_видна_в_списке(self):
+        payload = {
+            'sbc': {
+                'name': 'Gold',
+                'data': {
+                    'filters': [{
+                        'name': 'ST',
+                        'ruName': 'Нап',
+                        'rating': {'min': 75, 'max': 83},
+                        'futBinPercent': 90,
+                        'title': 'лига',
+                    }],
+                },
+            },
+        }
+        template = SbcTemplate.objects.create(name='Gold', payload=payload, version=1)
+        first = SbcSet.objects.create(name='Свои', version=1)
+        second = SbcSet.objects.create(name='Чужие', version=1)
+        SbcSetItem.objects.create(sbc_set=first, template=template, priority=True, position=0)
+        SbcSetItem.objects.create(sbc_set=second, template=template, priority=False, position=0)
+        account = Account.objects.get(email='a@b.com')
+        SbcAssignment.objects.create(account=account, sbc_set=first)
+        response = self.client.post('/farm/filters/', {
+            'action': 'save_sbc',
+            'set_id': str(first.id),
+            'template_id': str(template.id),
+            'slot_count': '1',
+            'min-0': '81',
+            'max-0': '84',
+            'percent-0': '90',
+            'priority': '1',
+            'maxRatingForSolver': '82',
+        })
+        self.assertContains(response, 'Плитка «Gold» сохранена')
+        self.assertContains(response, 'Чужие')
+        self.assertContains(response, 'value="81"')
+        template.refresh_from_db()
+        self.assertEqual(template.version, 2)
+        self.assertEqual(template.payload['sbc']['data']['filters'][0]['rating']['min'], 81)
+        self.assertEqual(template.payload['sbc']['data']['filters'][0]['title'], 'лига')
+        self.assertEqual(template.payload['sbc']['data']['maxRatingForSolver'], 82)
+        self.assertTrue(SbcSetItem.objects.get(sbc_set=first, template=template).priority)
+        self.assertFalse(SbcSetItem.objects.get(sbc_set=second, template=template).priority)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.version, 2)
+        self.assertEqual(second.version, 2)
+        started = self._api('session/start', {
+            'email': 'a@b.com',
+            'client': {'engine': 'core-v2', 'version': '1', 'known_modes': []},
+        })
+        session = started.json()['data']['session']
+        listed = self._api('sbc/list', {'session': session})
+        item = listed.json()['data']['items'][0]
+        self.assertTrue(item['priority'])
+        self.assertEqual(item['payload']['sbc']['data']['filters'][0]['rating']['min'], 81)
 
     def test_фильтры_заменяют_рынок(self):
         response = self.client.post('/farm/filters/', {

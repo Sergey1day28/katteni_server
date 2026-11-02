@@ -122,6 +122,16 @@
     .btn-danger:hover { background: #4a2229; }
     .btn-ghost { background: transparent; }
     .row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; margin: 0 0 10px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px 16px;
+      margin: 0 0 12px;
+    }
+    .form-grid label { display: flex; flex-direction: column; gap: 4px; }
+    .form-grid input, .form-grid select { width: 100%; }
+    input.tiny { width: 72px; }
+    details.card summary { cursor: pointer; color: var(--muted); margin: 0 0 10px; }
     .list { list-style: none; padding: 0; margin: 0 0 16px; }
     .list li {
       display: flex; gap: 8px; align-items: center;

@@ -321,7 +321,7 @@ def market_filters(_body):
     listing, _created = MarketFilterList.objects.get_or_create(pk=1, defaults={'version': 1})
     items = [
         {'title': item.title, 'payload': item.payload, 'version': item.version}
-        for item in MarketFilter.objects.order_by('position', 'title')
+        for item in MarketFilter.objects.filter(enabled=True).order_by('position', 'title')
     ]
     return {'version': listing.version, 'items': items}
 

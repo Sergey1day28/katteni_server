@@ -13,6 +13,15 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
 from farm_core.agent_queue import enqueue_close, enqueue_open, enqueue_stop_chrome
+from farm_core.catalog_forms import (
+    market_row_view,
+    remove_market_row,
+    save_market_row,
+    save_sbc_tile,
+    save_snipe_form,
+    selected_sbc,
+    snipe_form_values,
+)
 from farm_core.circle import continue_folder, start_folder, stop_run, sync_active_run
 from farm_core.folder_filter import (
     ACCOUNT_FILTER_PRESETS,
@@ -613,12 +622,32 @@ def filters_page(request):
             message = 'Снято назначений: %s' % count
         elif action == 'replace_market':
             message = _replace_market(request.POST.get('market_json') or '')
-        elif action == 'save_snipe':
-            payload = request.POST.get('snipe_payload') or ''
-            SnipeSettingsDoc.write(payload, updated_by=request.user.username)
-            message = 'Настройки снайпа сохранены'
+        elif action == 'save_market':
+            message = save_market_row(
+                request.POST.get('filter_id'),
+                request.POST,
+                request.user.username,
+            )
+        elif action == 'remove_market':
+            message = remove_market_row(request.POST.get('filter_id'))
+        elif action == 'save_snipe_form':
+            message = save_snipe_form(request.POST, request.user.username)
+        elif action == 'save_sbc':
+            message = save_sbc_tile(
+                request.POST.get('set_id'),
+                request.POST.get('template_id'),
+                request.POST,
+                request.user.username,
+            )
     listing, _created = MarketFilterList.objects.get_or_create(pk=1, defaults={'version': 1})
     market_items = list(MarketFilter.objects.order_by('position', 'title'))
+    if request.method == 'POST' and request.POST.get('action') == 'save_sbc':
+        set_id = request.POST.get('set_id')
+        tile_id = request.POST.get('template_id')
+    else:
+        set_id = request.GET.get('set')
+        tile_id = request.GET.get('tile')
+    snipe = SnipeSettingsDoc.current()
     sets = []
     for sbc_set in SbcSet.objects.order_by('name'):
         sets.append({
@@ -633,14 +662,16 @@ def filters_page(request):
     return render(request, 'farm_console/filters.html', {
         'sets': sets,
         'folders': Folder.objects.order_by('name'),
-        'market_items': market_items,
+        'market_rows': [market_row_view(item) for item in market_items],
         'market_version': listing.version,
         'market_json': json.dumps(
             [{'title': item.title, 'payload': item.payload} for item in market_items],
             ensure_ascii=False,
             indent=2,
         ),
-        'snipe': SnipeSettingsDoc.current(),
+        'snipe': snipe,
+        'snipe_form': snipe_form_values(snipe.payload if snipe else ''),
+        'editor': selected_sbc(set_id, tile_id),
         'message': message,
     })
 
