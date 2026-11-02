@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
-from farm_core.agent_queue import enqueue_open, enqueue_stop_chrome
+from farm_core.agent_queue import enqueue_close, enqueue_open, enqueue_stop_chrome
 from farm_core.circle import continue_folder, start_folder, stop_run, sync_active_run
 from farm_core.folder_filter import (
     ACCOUNT_FILTER_PRESETS,
@@ -449,6 +449,39 @@ def accounts_open(request):
     return JsonResponse({
         'ok': True,
         'message': 'Команда open поставлена: %s' % ', '.join(opened),
+    })
+
+
+@login_required
+@require_POST
+def accounts_close(request):
+    worker = Worker.objects.filter(enabled=True).order_by('id').first()
+    if worker is None:
+        return JsonResponse({'ok': False, 'message': 'ПК выключен'})
+    raw_ids = request.POST.getlist('account_id')
+    ids = []
+    for value in raw_ids:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    by_id = {account.id: account for account in Account.objects.filter(id__in=ids)}
+    closed = []
+    for account_id in ids:
+        account = by_id.get(account_id)
+        if account is None:
+            continue
+        email = (account.email or '').strip()
+        if not email:
+            continue
+        enqueue_close(worker, email)
+        closed.append(email)
+    if not closed:
+        return JsonResponse({'ok': False, 'message': 'Нет email для закрытия'})
+    logger.info('Закрытие аккаунтов с пульта: %s', closed)
+    return JsonResponse({
+        'ok': True,
+        'message': 'Команда close поставлена: %s' % ', '.join(closed),
     })
 
 

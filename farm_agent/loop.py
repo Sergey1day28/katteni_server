@@ -10,6 +10,7 @@ class AgentLoop:
         find_shortcut,
         launcher,
         stopper,
+        closer,
         journal,
         sleeper,
         poll_sec=4,
@@ -21,6 +22,7 @@ class AgentLoop:
         self._find_shortcut = find_shortcut
         self._launcher = launcher
         self._stopper = stopper
+        self._closer = closer
         self._journal = journal
         self._sleeper = sleeper
         self._poll_sec = poll_sec
@@ -64,6 +66,8 @@ class AgentLoop:
         elif action == 'stop_chrome':
             ok, error_text = self._stopper.stop()
             state = 'opened' if ok else 'failed'
+        elif action == 'close':
+            state, error_text = self._close(command.get('email') or '')
         else:
             state = 'failed'
             error_text = 'команда не поддерживается'
@@ -79,6 +83,24 @@ class AgentLoop:
         self._client.result(command_id, state, error_text)
 
     def _open(self, email):
+        path, error_text = self._shortcut(email)
+        if error_text:
+            return 'failed', error_text
+        ok, error_text = self._launcher.open_file(path)
+        if ok:
+            return 'opened', ''
+        return 'failed', error_text
+
+    def _close(self, email):
+        path, error_text = self._shortcut(email)
+        if error_text:
+            return 'failed', error_text
+        ok, error_text = self._closer.close(path)
+        if ok:
+            return 'opened', ''
+        return 'failed', error_text
+
+    def _shortcut(self, email):
         found = self._find_shortcut(self._settings.profiles_dir, email)
         if found.error:
             names = ', '.join(found.names)
@@ -86,9 +108,6 @@ class AgentLoop:
             if names:
                 text = '%s: %s' % (found.error, names)
             logging.info('Поиск ярлыка %s: %s', email, text)
-            return 'failed', text
+            return None, text
         logging.info('Найден ярлык %s: %s', email, found.path)
-        ok, error_text = self._launcher.open_file(found.path)
-        if ok:
-            return 'opened', ''
-        return 'failed', error_text
+        return found.path, ''

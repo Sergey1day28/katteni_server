@@ -2,7 +2,7 @@
 {% block title %}Аккаунты{% endblock %}
 {% block content %}
 <h1>Аккаунты</h1>
-<div class="card" id="accounts-search" data-search-url="{% url 'farm-accounts-search' %}" data-open-url="{% url 'farm-accounts-open' %}">
+<div class="card" id="accounts-search" data-search-url="{% url 'farm-accounts-search' %}" data-open-url="{% url 'farm-accounts-open' %}" data-close-url="{% url 'farm-accounts-close' %}">
   {% csrf_token %}
   <div id="accounts-open-msg"></div>
   <p class="muted">Поиск</p>
@@ -54,14 +54,14 @@
     openMsg.textContent = text || '';
   }
 
-  function openAccounts(ids) {
-    if (!ids.length) return;
+  function postAccountCommand(url, ids, failText) {
+    if (!ids.length || !url) return;
     var data = new FormData();
     data.append('csrfmiddlewaretoken', token ? token.value : '');
     ids.forEach(function (id) {
       data.append('account_id', id);
     });
-    fetch(root.getAttribute('data-open-url'), {
+    fetch(url, {
       method: 'POST',
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
       body: data
@@ -70,8 +70,16 @@
     }).then(function (body) {
       showOpenMessage(body.message || '', !!body.ok);
     }).catch(function () {
-      showOpenMessage('Не удалось поставить open', false);
+      showOpenMessage(failText, false);
     });
+  }
+
+  function openAccounts(ids) {
+    postAccountCommand(root.getAttribute('data-open-url'), ids, 'Не удалось поставить open');
+  }
+
+  function closeAccounts(ids) {
+    postAccountCommand(root.getAttribute('data-close-url'), ids, 'Не удалось поставить close');
   }
 
   function renderChips() {
@@ -168,6 +176,11 @@
   });
 
   foundBox.addEventListener('click', function (event) {
+    var closeOne = event.target.closest('[data-close-account]');
+    if (closeOne) {
+      closeAccounts([closeOne.getAttribute('data-close-account')]);
+      return;
+    }
     var one = event.target.closest('[data-open-account]');
     if (one) {
       openAccounts([one.getAttribute('data-open-account')]);

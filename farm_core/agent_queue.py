@@ -14,6 +14,15 @@ def enqueue_open(worker, email, run=None, entry=None):
     )
 
 
+def enqueue_close(worker, email):
+    return AgentCommand.objects.create(
+        worker=worker,
+        action=AgentCommand.ACTION_CLOSE,
+        email=email,
+        state=AgentCommand.STATE_PENDING,
+    )
+
+
 def enqueue_stop_chrome(worker, run=None):
     return AgentCommand.objects.create(
         worker=worker,

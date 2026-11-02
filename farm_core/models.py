@@ -307,6 +307,7 @@ class RunEntry(models.Model):
 class AgentCommand(models.Model):
     ACTION_OPEN = 'open'
     ACTION_STOP = 'stop_chrome'
+    ACTION_CLOSE = 'close'
 
     STATE_PENDING = 'pending'
     STATE_ACKED = 'acked'

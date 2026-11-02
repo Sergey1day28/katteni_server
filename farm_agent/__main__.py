@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from farm_agent.client import AgentClient
+from farm_agent.close import ProfileCloser
 from farm_agent.journal import CommandJournal
 from farm_agent.launch import Launcher
 from farm_agent.lock import InstanceLock
@@ -59,6 +60,7 @@ def main(argv=None):
             find_shortcut=find_shortcut,
             launcher=Launcher(),
             stopper=ChromeStopper(),
+            closer=ProfileCloser(),
             journal=CommandJournal(settings.journal_path),
             sleeper=time.sleep,
         )

@@ -185,6 +185,8 @@ class ConsoleTests(TestCase):
         self.assertContains(response, 'Открыть')
         self.assertContains(response, 'Открыть выбранные')
         self.assertContains(response, 'data-open-url')
+        self.assertContains(response, 'Закрыть')
+        self.assertContains(response, 'data-close-url')
         self.assertNotContains(response, 'data-filter-key="preview"')
         self.assertNotContains(response, 'data-filter-key="priority"')
         self.assertNotContains(response, 'data-filter-key="sbc_name"')
@@ -506,6 +508,22 @@ class ConsoleTests(TestCase):
         self.assertFalse(body['ok'])
         self.assertIn('ПК выключен', body['message'])
         self.assertFalse(AgentCommand.objects.exists())
+
+    def test_закрытие_аккаунта_с_пульта(self):
+        account = Account.objects.get(email='a@b.com')
+        response = self.client.post(
+            '/farm/accounts/close/',
+            {'account_id': str(account.id)},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertIn('a@b.com', body['message'])
+        commands = list(AgentCommand.objects.filter(action=AgentCommand.ACTION_CLOSE))
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].email, 'a@b.com')
+        self.assertIsNone(commands[0].run_id)
+        self.assertFalse(AgentCommand.objects.filter(action=AgentCommand.ACTION_OPEN).exists())
 
     def test_карточка_снимает_назначение_сбч(self):
         account = Account.objects.get(email='a@b.com')

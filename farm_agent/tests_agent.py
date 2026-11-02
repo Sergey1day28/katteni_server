@@ -18,6 +18,12 @@ from farm_agent.settings import AgentSettings, desktop_dir, load_settings
 from farm_agent.stop import ChromeStopper
 
 
+class IdleCloser:
+    def close(self, path):
+        del path
+        return True, ''
+
+
 class FakeSettings:
     def __init__(self, profiles_dir, worker_id='pc-1'):
         self.profiles_dir = profiles_dir
@@ -203,6 +209,7 @@ class AgentUnitTests(unittest.TestCase):
                 find_shortcut=find_shortcut,
                 launcher=type('L', (), {'open_file': lambda _self, path: launched.append(path) or (True, '')})(),
                 stopper=ChromeStopper(run=lambda _cmd, **_kw: type('R', (), {'returncode': 0})()),
+                closer=IdleCloser(),
                 journal=CommandJournal(root / 'j.json'),
                 sleeper=lambda _sec: None,
             )
@@ -231,6 +238,7 @@ class AgentUnitTests(unittest.TestCase):
                 find_shortcut=find_shortcut,
                 launcher=type('L', (), {'open_file': lambda _self, path: launched.append(path) or (True, '')})(),
                 stopper=ChromeStopper(run=lambda _cmd, **_kw: type('R', (), {'returncode': 0})()),
+                closer=IdleCloser(),
                 journal=CommandJournal(root / 'j.json'),
                 sleeper=lambda _sec: None,
             )
@@ -261,6 +269,7 @@ class AgentUnitTests(unittest.TestCase):
             find_shortcut=find_shortcut,
             launcher=Launcher(start=lambda _path, show_cmd=None: None, sleep=lambda _s: None),
             stopper=ChromeStopper(run=lambda _c, **_k: type('R', (), {'returncode': 0})()),
+            closer=IdleCloser(),
             journal=CommandJournal(Path(tempfile.gettempdir()) / 'unused-journal.json'),
             sleeper=sleeper,
             poll_sec=4,
