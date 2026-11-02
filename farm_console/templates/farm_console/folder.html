@@ -17,16 +17,6 @@
       </select>
     </label>
   </div>
-  <p><label><input type="checkbox" name="assign_sbc" value="1" {% if folder.assign_sbc %}checked{% endif %}> Распространить СБЧ на аккаунты</label></p>
-  <p class="muted">Кого открывать</p>
-  <p class="row">
-    {% for rule in open_rules %}
-    <label>
-      <input type="radio" name="open_rule" value="{{ rule.key }}"{% if folder.open_rule == rule.key %} checked{% endif %}>
-      {{ rule.title }}
-    </label>
-    {% endfor %}
-  </p>
   <button type="submit" class="btn-primary">Сохранить</button>
 </form>
 <form method="post">

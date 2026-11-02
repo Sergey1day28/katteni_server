@@ -139,9 +139,7 @@ def folder_page(request, folder_id):
         if action == 'save':
             folder.name = request.POST.get('name') or folder.name
             folder.open_at_a_time = int(request.POST.get('open_at_a_time') or 1)
-            folder.assign_sbc = request.POST.get('assign_sbc') == '1'
             folder.order = request.POST.get('order') or 'email'
-            folder.open_rule = request.POST.get('open_rule') or 'all'
             folder.save()
             sync_active_run(folder)
             message = 'Папка сохранена'
@@ -195,7 +193,6 @@ def folder_page(request, folder_id):
         'modes_preview': modes_preview(folder.modes),
         'filter_presets': FILTER_PRESETS,
         'searched': searched,
-        'open_rules': OPEN_RULES,
     })
 
 
@@ -281,6 +278,7 @@ def schedule_page(request):
         action = request.POST.get('action')
         if action == 'create':
             folder = get_object_or_404(Folder, id=request.POST.get('folder_id'))
+            open_rule, assign_sbc = _read_open(request)
             Schedule.objects.create(
                 name=request.POST.get('name') or folder.name,
                 folder=folder,
@@ -290,6 +288,8 @@ def schedule_page(request):
                 stop_time=_parse_clock(request.POST.get('stop_time'), time(23, 0)),
                 enabled=request.POST.get('enabled') == '1',
                 kill_chrome_before=True,
+                open_rule=open_rule,
+                assign_sbc=assign_sbc,
             )
             message = 'Расписание создано'
         elif action == 'save':
@@ -302,6 +302,7 @@ def schedule_page(request):
             schedule.start_time = _parse_clock(request.POST.get('start_time'), schedule.start_time)
             schedule.stop_time = _parse_clock(request.POST.get('stop_time'), schedule.stop_time)
             schedule.enabled = request.POST.get('enabled') == '1'
+            schedule.open_rule, schedule.assign_sbc = _read_open(request)
             schedule.save()
             logger.info('Расписание %s сохранено', schedule.name)
             message = 'Расписание сохранено'
@@ -317,7 +318,12 @@ def schedule_page(request):
             message = 'Расписание удалено'
         elif action == 'run_now':
             schedule = get_object_or_404(Schedule, id=request.POST.get('schedule_id'))
-            result = start_folder(schedule.folder, started_by=request.user.username)
+            result = start_folder(
+                schedule.folder,
+                started_by=request.user.username,
+                kill_chrome=schedule.kill_chrome_before,
+                schedule=schedule,
+            )
             message = _result_text(result)
     schedules = list(Schedule.objects.select_related('folder').all())
     last_fires = {}
@@ -338,6 +344,7 @@ def schedule_page(request):
         'rows': rows,
         'folders': Folder.objects.order_by('name'),
         'weekdays': _weekdays(),
+        'open_rules': OPEN_RULES,
         'message': message,
     })
 
@@ -880,6 +887,14 @@ def _read_days(request):
         if item.isdigit():
             days.append(int(item))
     return days
+
+
+def _read_open(request):
+    allowed = {item['key'] for item in OPEN_RULES}
+    rule = request.POST.get('open_rule') or 'all'
+    if rule not in allowed:
+        rule = 'all'
+    return rule, request.POST.get('assign_sbc') == '1'
 
 
 def _weekdays():

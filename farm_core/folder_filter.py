@@ -131,9 +131,9 @@ def _account_key(account):
     return None
 
 
-def accounts_for_start(folder, now=None):
+def accounts_for_start(folder, now=None, open_rule=None):
     members = folder_accounts(folder)
-    rule = folder.open_rule or OPEN_RULE_ALL
+    rule = open_rule or OPEN_RULE_ALL
     conditions = OPEN_RULE_FILTERS.get(rule)
     if not conditions:
         return members, 0

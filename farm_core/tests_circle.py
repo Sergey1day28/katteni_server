@@ -85,12 +85,10 @@ class CircleTests(TestCase):
     def test_открывать_только_не_собравших_сбч(self):
         sbc_set = SbcSet.objects.create(name='набор')
         assign_set(self.left, sbc_set)
-        self.folder.open_rule = 'uncollected_sbc'
-        self.folder.save(update_fields=['open_rule'])
-        selected, missing = accounts_for_start(self.folder)
+        selected, missing = accounts_for_start(self.folder, open_rule='uncollected_sbc')
         self.assertEqual([account.email for account in selected], ['a@b.com'])
         self.assertEqual(missing, 0)
-        result = start_folder(self.folder, worker=self.worker)
+        result = start_folder(self.folder, worker=self.worker, open_rule='uncollected_sbc')
         self.assertTrue(result['ok'])
         self.assertEqual(result['data']['total'], 1)
         self.assertEqual(
@@ -101,9 +99,7 @@ class CircleTests(TestCase):
     def test_открывать_не_закончивших_снайп(self):
         put_daily_metric(self.left, timezone.localdate(), 'market_searches', 10)
         put_daily_metric(self.right, timezone.localdate(), 'market_searches', 400)
-        self.folder.open_rule = 'unfinished_snipe'
-        self.folder.save(update_fields=['open_rule'])
-        selected, missing = accounts_for_start(self.folder)
+        selected, missing = accounts_for_start(self.folder, open_rule='unfinished_snipe')
         self.assertEqual([account.email for account in selected], ['a@b.com'])
         self.assertEqual(missing, 0)
 
@@ -319,15 +315,40 @@ class CircleTests(TestCase):
 
     def test_назначить_сбч_вешает_общий_набор(self):
         common = SbcSet.objects.create(name='общие', common=True)
-        self.folder.assign_sbc = True
-        self.folder.save(update_fields=['assign_sbc'])
-        start_folder(self.folder, worker=self.worker)
+        start_folder(self.folder, worker=self.worker, assign_sbc=True)
         assigned = SbcAssignment.objects.filter(
             account=self.left,
             state=SbcAssignment.STATE_ACTIVE,
         ).first()
         self.assertIsNotNone(assigned)
         self.assertEqual(assigned.sbc_set_id, common.id)
+
+    def test_старт_по_расписанию_берёт_правило_скрипта(self):
+        source = SbcSet.objects.create(name='набор')
+        assign_set(self.left, source)
+        common = SbcSet.objects.create(name='общие', common=True)
+        schedule = Schedule.objects.create(
+            name='утро',
+            folder=self.folder,
+            start_time=time(9, 0),
+            stop_time=time(23, 0),
+            open_rule='uncollected_sbc',
+            assign_sbc=True,
+        )
+        result = start_folder(self.folder, worker=self.worker, schedule=schedule)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['total'], 1)
+        assigned = SbcAssignment.objects.get(
+            account=self.left,
+            state=SbcAssignment.STATE_ACTIVE,
+        )
+        self.assertEqual(assigned.sbc_set_id, common.id)
+        self.assertFalse(
+            SbcAssignment.objects.filter(
+                account=self.right,
+                state=SbcAssignment.STATE_ACTIVE,
+            ).exists()
+        )
 
     def test_без_галки_сбч_не_назначает(self):
         SbcSet.objects.create(name='общие', common=True)

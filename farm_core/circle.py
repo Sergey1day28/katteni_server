@@ -5,7 +5,11 @@ from django.utils import timezone
 
 from farm_core.agent_queue import cancel_pending, enqueue_open, enqueue_stop_chrome
 from farm_core.event_log import log_event
-from farm_core.folder_filter import accounts_for_start, accounts_in_other_active_run
+from farm_core.folder_filter import (
+    OPEN_RULE_ALL,
+    accounts_for_start,
+    accounts_in_other_active_run,
+)
 from farm_core.models import (
     AgentCommand,
     FolderRun,
@@ -25,12 +29,22 @@ _OPEN_ENTRY_STATES = (
 )
 
 
-def start_folder(folder, started_by='operator', worker=None, kill_chrome=True, schedule=None):
+def start_folder(
+    folder,
+    started_by='operator',
+    worker=None,
+    kill_chrome=True,
+    schedule=None,
+    open_rule=None,
+    assign_sbc=None,
+):
     worker = worker or ensure_configured_worker()
     now = timezone.now()
+    rule = _resolved_open_rule(schedule, open_rule)
+    spread_sbc = _resolved_assign_sbc(schedule, assign_sbc)
     if not worker.enabled:
         return {'ok': False, 'error': {'code': 'worker_disabled', 'message': 'ПК выключен'}}
-    selected, missing = _members_for_start(folder, now)
+    selected, missing = _members_for_start(folder, now, rule)
     if not selected:
         return {
             'ok': False,
@@ -68,7 +82,7 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=True, s
                     state=RunEntry.STATE_WAITING,
                 )
             )
-            if folder.assign_sbc:
+            if spread_sbc:
                 sbc_set = default_sbc_set()
                 if sbc_set is not None:
                     assign_set(account, sbc_set, run=run)
@@ -76,10 +90,11 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=True, s
             enqueue_stop_chrome(worker, run=run)
         opened = _queue_next(run, worker, folder.open_at_a_time)
         logger.info(
-            'Запущен круг папки %s, аккаунтов %s, очередь %s',
+            'Запущен круг папки %s, аккаунтов %s, очередь %s, правило %s',
             folder.name,
             len(entries),
             opened,
+            rule,
         )
     return {
         'ok': True,
@@ -93,7 +108,7 @@ def start_folder(folder, started_by='operator', worker=None, kill_chrome=True, s
     }
 
 
-def continue_folder(folder, started_by='operator', worker=None, schedule=None):
+def continue_folder(folder, started_by='operator', worker=None, schedule=None, assign_sbc=None):
     worker = worker or ensure_configured_worker()
     run = (
         FolderRun.objects.filter(folder=folder)
@@ -116,7 +131,7 @@ def continue_folder(folder, started_by='operator', worker=None, schedule=None):
         run.schedule = schedule
         run.save(update_fields=['state', 'ended_at', 'end_reason', 'started_by', 'schedule'])
         _apply_run_settings(run, folder)
-        if folder.assign_sbc:
+        if _resolved_assign_sbc(schedule, assign_sbc):
             _assign_sbc(run, [entry.account for entry in leftovers if entry.account_id])
         queued = _queue_next(run, worker, run.open_at_a_time)
     return {'ok': True, 'data': {'run_id': run.id, 'queued': queued, 'total': len(leftovers)}}
@@ -127,13 +142,6 @@ def sync_active_run(folder):
     if run is None:
         return
     _apply_run_settings(run, folder)
-    if folder.assign_sbc:
-        accounts = [
-            entry.account
-            for entry in run.entries.filter(state__in=_OPEN_ENTRY_STATES).select_related('account')
-            if entry.account_id
-        ]
-        _assign_sbc(run, accounts)
     logger.info('Активный круг папки %s обновлён из карточки', folder.name)
 
 
@@ -291,8 +299,24 @@ def on_command_finished(command):
         entry.save(update_fields=['state'])
 
 
-def _members_for_start(folder, now):
-    return accounts_for_start(folder, now=now)
+def _resolved_open_rule(schedule, override):
+    if override:
+        return override
+    if schedule is not None and schedule.open_rule:
+        return schedule.open_rule
+    return OPEN_RULE_ALL
+
+
+def _resolved_assign_sbc(schedule, override):
+    if override is not None:
+        return bool(override)
+    if schedule is not None:
+        return bool(schedule.assign_sbc)
+    return False
+
+
+def _members_for_start(folder, now, open_rule):
+    return accounts_for_start(folder, now=now, open_rule=open_rule)
 
 
 def _ordered(accounts, order):

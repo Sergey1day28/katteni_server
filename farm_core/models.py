@@ -106,10 +106,8 @@ class Folder(models.Model):
     modes_text = models.TextField(blank=True)
     open_at_a_time = models.IntegerField(default=1)
     sbc_set = models.ForeignKey(SbcSet, null=True, blank=True, on_delete=models.SET_NULL)
-    assign_sbc = models.BooleanField(default=False)
     kill_chrome_before_scheduled = models.BooleanField(default=False)
     order = models.CharField(max_length=32, default='email')
-    open_rule = models.CharField(max_length=32, default='all')
     owner = models.CharField(max_length=150, blank=True)
 
     def __str__(self):
@@ -340,6 +338,8 @@ class Schedule(models.Model):
     stop_time = models.TimeField()
     enabled = models.BooleanField(default=True)
     kill_chrome_before = models.BooleanField(default=True)
+    assign_sbc = models.BooleanField(default=False)
+    open_rule = models.CharField(max_length=32, default='all')
 
 
 class ScheduleFire(models.Model):

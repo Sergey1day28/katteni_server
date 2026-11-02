@@ -104,6 +104,8 @@ class ConsoleTests(TestCase):
         self.assertNotContains(created, 'a.m.')
         self.assertNotContains(created, 'type="time"')
         self.assertNotContains(created, 'гасить Chrome')
+        self.assertContains(created, 'Кого открывать')
+        self.assertContains(created, 'Распространить СБЧ на аккаунты')
         self.assertTrue(Schedule.objects.get(name='утро').kill_chrome_before)
         self.assertContains(created, 'schedule-summary')
         self.assertContains(created, '<th>Старт</th>')
@@ -118,6 +120,8 @@ class ConsoleTests(TestCase):
             'start_time': '16:00',
             'stop_time': '22:15',
             'enabled': '1',
+            'open_rule': 'uncollected_sbc',
+            'assign_sbc': '1',
         })
         self.assertContains(saved, 'Расписание сохранено')
         schedule.refresh_from_db()
@@ -127,6 +131,8 @@ class ConsoleTests(TestCase):
         self.assertEqual(schedule.start_time.strftime('%H:%M'), '16:00')
         self.assertEqual(schedule.stop_time.strftime('%H:%M'), '22:15')
         self.assertTrue(schedule.kill_chrome_before)
+        self.assertEqual(schedule.open_rule, 'uncollected_sbc')
+        self.assertTrue(schedule.assign_sbc)
         self.assertContains(saved, '16:00')
         self.assertContains(saved, 'value="save"')
         farm = self.client.get('/farm/')
@@ -287,7 +293,7 @@ class ConsoleTests(TestCase):
         page = self.client.get('/farm/folders/%s/' % folder.id)
         self.assertContains(page, 'Выбрать все')
         self.assertContains(page, 'a@b.com')
-        self.assertContains(page, 'Кого открывать')
+        self.assertNotContains(page, 'Кого открывать')
         add = self.client.post(
             '/farm/folders/%s/' % folder.id,
             {'action': 'add_selected', 'account_id': str(account.id)},
@@ -626,7 +632,8 @@ class ConsoleTests(TestCase):
         self.assertNotContains(response, 'SBCmode')
         self.assertNotContains(response, 'Набор СБЧ')
         self.assertNotContains(response, 'Гасить Chrome')
-        self.assertContains(response, 'Распространить СБЧ на аккаунты')
+        self.assertNotContains(response, 'Распространить СБЧ на аккаунты')
+        self.assertNotContains(response, 'Кого открывать')
         self.assertContains(response, 'Редактировать моды')
         self.assertContains(response, 'Выбор аккаунтов')
         self.assertContains(response, 'Собрать СБЧ')
@@ -645,12 +652,10 @@ class ConsoleTests(TestCase):
             'name': 'Свои',
             'open_at_a_time': '1',
             'order': 'email',
-            'assign_sbc': '1',
         })
         self.assertEqual(response.status_code, 200)
         folder.refresh_from_db()
         self.assertEqual(folder.modes, [{'key': 'collectSBC', 'value': None}])
-        self.assertTrue(folder.assign_sbc)
 
     def test_сохранение_папки_обновляет_активный_круг(self):
         folder = Folder.objects.create(
@@ -667,7 +672,6 @@ class ConsoleTests(TestCase):
             'name': 'Свои',
             'open_at_a_time': '3',
             'order': 'email',
-            'assign_sbc': '1',
         })
         self.assertEqual(response.status_code, 200)
         run = folder.runs.get(state='active')
