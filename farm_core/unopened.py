@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from farm_core.agent_queue import enqueue_close
 from farm_core.circle import finish_entry
+from farm_core.event_log import log_event
 from farm_core.models import AgentCommand, FolderRun, NotifyOutbox, RunEntry
 from farm_core.telegram_send import send_auto_buy
 
@@ -22,7 +23,7 @@ def release_profiles_without_session(now=None, send=None):
         last_command__action=AgentCommand.ACTION_OPEN,
         last_command__state=AgentCommand.STATE_OPENED,
         last_command__finished_at__lte=limit,
-    ).select_related('run', 'last_command', 'last_command__worker')
+    ).select_related('run', 'run__folder', 'last_command', 'last_command__worker')
     released = []
     for entry in entries:
         if _close_already_pending(entry.email):
@@ -32,6 +33,10 @@ def release_profiles_without_session(now=None, send=None):
         finish_entry(entry.email)
         _notify(entry, send)
         logger.info('Профиль без вкладки EA, закрываю %s', entry.email)
+        log_event(
+            'Папка %s, аккаунт %s: вкладка EA не открылась за %s с, профиль закрыт'
+            % (entry.run.folder.name, entry.email, grace)
+        )
         released.append(entry.email)
     return released
 

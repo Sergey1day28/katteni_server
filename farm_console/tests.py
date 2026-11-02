@@ -130,9 +130,8 @@ class ConsoleTests(TestCase):
         self.assertContains(saved, '16:00')
         self.assertContains(saved, 'value="save"')
         farm = self.client.get('/farm/')
-        self.assertContains(farm, '16:00')
-        self.assertContains(farm, '22:15')
-        self.assertContains(farm, 'вт')
+        self.assertNotContains(farm, '16:00')
+        self.assertNotContains(farm, 'Свои')
         deleted = self.client.post('/farm/schedule/', {
             'action': 'delete',
             'schedule_id': str(schedule.id),
@@ -248,6 +247,8 @@ class ConsoleTests(TestCase):
             enabled=True,
         )
         idle = self.client.get('/farm/')
+        self.assertContains(idle, 'нет активного открытия')
+        self.assertNotContains(idle, 'Свои')
         self.assertNotContains(idle, '04:17')
         self.assertNotContains(idle, '19:41')
         start_folder(folder, started_by='schedule', schedule=morning)
@@ -257,12 +258,14 @@ class ConsoleTests(TestCase):
         self.assertNotContains(live, '19:41')
 
     def test_лимит_запросов_не_неизвестный_мод(self):
-        Folder.objects.create(
+        folder = Folder.objects.create(
             name='test',
             filter=default_filter(),
             modes=[{'key': 'За  часа можно сделать запросов', 'value': '24650'}],
             modes_text='За 24 часа можно сделать запросов650+',
         )
+        replace_members(folder, [Account.objects.get(email='a@b.com')])
+        start_folder(folder, started_by='op')
         response = self.client.get('/farm/')
         self.assertContains(response, 'test')
         self.assertNotContains(response, 'неизвестный мод')

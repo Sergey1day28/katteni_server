@@ -48,16 +48,20 @@
         {% endfor %}
       </ul>
     {% endif %}
+    <div class="mode-pills">
     {% for action in modes_preview.actions %}
-      <p><strong>{{ action.title }}{% if action.value != None %} {{ action.value }}{% endif %}</strong></p>
-      {% if action.conditions %}
-      <ul class="modes-tree">
-        {% for item in action.conditions %}
-        <li>{{ item.title }}{% if item.value != None %} {{ item.value }}{% endif %}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
+      <div class="mode-pill">
+        <div class="mode-pill-title">{{ action.title }}{% if action.value != None %} {{ action.value }}{% endif %}</div>
+        {% if action.conditions %}
+        <div class="mode-pill-subs">
+          {% for item in action.conditions %}
+          <span class="mode-pill-sub">{{ item.title }}{% if item.value != None %} {{ item.value }}{% endif %}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
     {% endfor %}
+    </div>
   {% else %}
     <p class="muted">модов нет</p>
   {% endif %}

@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from farm_core.agent_queue import cancel_pending, enqueue_open, enqueue_stop_chrome
+from farm_core.event_log import log_event
 from farm_core.folder_filter import accounts_for_start, accounts_in_other_active_run
 from farm_core.models import (
     AgentCommand,
@@ -179,6 +180,7 @@ def _stop_active_runs():
     )
     for run in runs:
         logger.info('Останавливаю круг папки %s: на ПК одна папка', run.folder.name)
+        log_event('Папка %s, круг закрыт: на ПК запущена другая папка' % run.folder.name)
         stop_run(run)
 
 
@@ -275,6 +277,10 @@ def on_command_finished(command):
         entry.error_text = command.error_text
         entry.closed_at = timezone.now()
         entry.save(update_fields=['state', 'error_text', 'closed_at'])
+        log_event(
+            'Папка %s, аккаунт %s не открылся: %s'
+            % (run.folder.name, entry.email, entry.error_text or 'не открылся')
+        )
         _notify_failed(run, entry)
         if command.worker_id:
             _queue_next(run, command.worker, 1)

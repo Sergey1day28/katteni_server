@@ -9,12 +9,14 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
 from farm_core.agent_queue import enqueue_stop_chrome
-from farm_core.circle import confirm_opened, finish_entry, _active_entry
+from farm_core.circle import confirm_opened, finish_entry, stop_run, _active_entry
+from farm_core.event_log import log_event
 from farm_core.metrics import put_daily_metric
 from farm_core.mode_labels import normalize_modes
 from farm_core.models import (
     Account,
     AccountLoginSecret,
+    AgentCommand,
     AccountSnapshot,
     BotSession,
     FolderRun,
@@ -176,6 +178,10 @@ def session_finish(body):
     target_email = (session.email if session else email) or ''
     keep = reason == 'page_not_loaded' and not getattr(settings, 'PAGE_NOT_LOADED_CLOSE', False)
     action = 'keep_open' if keep else 'close_browser'
+    log_event(
+        'Аккаунт %s закончил сессию: %s, %s'
+        % (target_email, reason, 'оставлю открытым' if keep else 'закрою')
+    )
     if not keep:
         finish_entry(target_email, reason=reason)
     if session:
@@ -398,25 +404,50 @@ def mark_stalled(now=None):
     now = now or timezone.now()
     minutes = getattr(settings, 'STALL_MINUTES', 5)
     threshold = now - timedelta(minutes=minutes)
-    stalled = RunEntry.objects.filter(
-        run__state=FolderRun.STATE_ACTIVE,
-        state__in=[RunEntry.STATE_QUEUED, RunEntry.STATE_OPENED],
-        last_seen_at__lt=threshold,
+    entries = list(
+        RunEntry.objects.filter(
+            run__state=FolderRun.STATE_ACTIVE,
+            state__in=[RunEntry.STATE_QUEUED, RunEntry.STATE_OPENED],
+        ).select_related('run', 'run__folder', 'last_command')
     )
+    by_run = {}
+    for entry in entries:
+        seen = entry.last_seen_at or entry.queued_at or entry.run.started_at
+        if seen is None or seen >= threshold:
+            continue
+        by_run.setdefault(entry.run_id, []).append(entry)
     reports = []
-    for entry in stalled:
-        key = 'stall-%s' % entry.id
-        NotifyOutbox.objects.get_or_create(
-            dedup_key=key,
-            defaults={
-                'channel': 'important',
-                'text': 'Зависла запись %s (нет heartbeat %s мин)' % (entry.email, minutes),
-            },
-        )
-        reports.append(entry.email)
+    for group in by_run.values():
+        run = group[0].run
+        stop_run(run)
         if getattr(settings, 'STALL_KILL_CHROME', False):
-            enqueue_stop_chrome(ensure_configured_worker(), run=entry.run)
+            enqueue_stop_chrome(ensure_configured_worker(), run=run)
+        for entry in group:
+            reason = _stall_reason(entry, minutes)
+            log_event(
+                'Папка %s зависла, аккаунт %s, %s, круг закрыт'
+                % (run.folder.name, entry.email, reason)
+            )
+            NotifyOutbox.objects.get_or_create(
+                dedup_key='stall-%s' % entry.id,
+                defaults={
+                    'channel': 'important',
+                    'text': 'Зависла запись %s (%s)' % (entry.email, reason),
+                },
+            )
+            reports.append(entry.email)
     return reports
+
+
+def _stall_reason(entry, minutes):
+    command = entry.last_command
+    waiting = (
+        AgentCommand.STATE_PENDING,
+        AgentCommand.STATE_ACKED,
+    )
+    if command is not None and command.state in waiting and command.finished_at is None:
+        return 'команда открытия без итога %s мин' % minutes
+    return 'нет сигнала %s мин' % minutes
 
 
 def _new_session(email, account, entry, body):

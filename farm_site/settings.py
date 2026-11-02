@@ -126,11 +126,30 @@ LOGGING = {
             'format': '{levelname} {name} {message}',
             'style': '{',
         },
+        'journal': {
+            'format': '{asctime} {levelname} {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'console',
+        },
+        'journal': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(BASE_DIR / 'logs' / 'farm_journal.log'),
+            'maxBytes': 1024 * 1024,
+            'backupCount': 3,
+            'encoding': 'utf-8',
+            'formatter': 'journal',
+        },
+    },
+    'loggers': {
+        'farm_journal': {
+            'handlers': ['journal'],
+            'level': 'INFO',
+            'propagate': True,
         },
     },
     'root': {

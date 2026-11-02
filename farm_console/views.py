@@ -112,7 +112,10 @@ def farm_home(request):
             if worker:
                 enqueue_stop_chrome(worker)
                 message = 'Команда stop_chrome поставлена'
-    folders = [_folder_row(folder) for folder in Folder.objects.all().order_by('name')]
+    active_folders = Folder.objects.filter(
+        runs__state=FolderRun.STATE_ACTIVE,
+    ).distinct().order_by('name')
+    folders = [_folder_row(folder) for folder in active_folders]
     worker = Worker.objects.order_by('id').first()
     return render(request, 'farm_console/farm.html', {
         'folders': folders,

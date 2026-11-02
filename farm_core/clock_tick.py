@@ -6,6 +6,7 @@ from django.db import close_old_connections
 from django.utils import timezone
 
 from farm_core.bot_api import mark_stalled
+from farm_core.event_log import log_event
 from farm_core.circle import start_folder, continue_folder, stop_run
 from farm_core.models import FolderRun, Schedule, ScheduleFire
 from farm_core.unopened import release_profiles_without_session
@@ -139,6 +140,10 @@ def _fire_stop(schedule, local_date, now):
     ).first()
     error = ''
     if run is not None:
+        log_event(
+            'Папка %s, круг закрыт по расписанию %s'
+            % (schedule.folder.name, schedule.name)
+        )
         stop_run(run)
         result = 'ok'
     else:
