@@ -93,9 +93,9 @@
 <form method="post">
   {% csrf_token %}
   <input type="hidden" name="action" value="stall">
-  <p><label>Порог, минут <input name="stall_minutes" type="number" min="1" value="{{ stall_minutes }}"></label></p>
-  <p><label><input type="checkbox" name="stall_kill_chrome" value="1"{% if stall_kill_chrome %} checked{% endif %}> Гасить Chrome командой агента</label></p>
-  <p><label><input type="checkbox" name="page_not_loaded_close" value="1"{% if page_not_loaded_close %} checked{% endif %}> Закрывать профиль, если страница EA не загрузилась</label></p>
+  <p><label>Порог зависания круга, минут <input name="stall_minutes" type="number" min="1" value="{{ stall_minutes }}"></label></p>
+  <p><label>Ждать ответ открытого профиля, минут <input name="silent_minutes" type="number" min="1" value="{{ silent_minutes }}"></label></p>
+  <p class="muted">Порог гасит весь круг, если запись молчит. Второе поле закрывает только профиль, который открылся и не вызвал сервер: email уходит в autoBuyer, очередь идёт дальше.</p>
   <button type="submit" class="btn-primary">Сохранить</button>
 </form>
 </div>

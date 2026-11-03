@@ -101,17 +101,9 @@ def farm_home(request):
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'stall':
-            try:
-                minutes = int(request.POST.get('stall_minutes') or 5)
-            except ValueError:
-                minutes = 5
-            if minutes < 1:
-                minutes = 1
-            _save_stall_flags(
-                minutes,
-                request.POST.get('stall_kill_chrome') == '1',
-                request.POST.get('page_not_loaded_close') == '1',
-            )
+            minutes = _positive_minutes(request.POST.get('stall_minutes'), 5)
+            silent = _positive_minutes(request.POST.get('silent_minutes'), 2)
+            _save_stall_minutes(minutes, silent)
             message = 'Порог зависания сохранён'
         elif action in ('start', 'continue', 'stop'):
             folder = get_object_or_404(Folder, id=request.POST.get('folder_id'))
@@ -133,8 +125,7 @@ def farm_home(request):
         'worker_alive': _worker_alive(worker),
         'heartbeat_sec': getattr(settings, 'HEARTBEAT_SEC', 60),
         'stall_minutes': getattr(settings, 'STALL_MINUTES', 5),
-        'stall_kill_chrome': getattr(settings, 'STALL_KILL_CHROME', False),
-        'page_not_loaded_close': getattr(settings, 'PAGE_NOT_LOADED_CLOSE', False),
+        'silent_minutes': max(1, int(getattr(settings, 'OPEN_GRACE_SEC', 120) or 120) // 60),
     })
 
 
@@ -863,18 +854,28 @@ def _sbc_folder_name(action, extra):
     return 'Папка СБЧ'
 
 
-def _save_stall_flags(minutes, kill_chrome, page_close):
+def _positive_minutes(raw, default):
+    try:
+        minutes = int(raw)
+    except (TypeError, ValueError):
+        minutes = default
+    if minutes < 1:
+        return 1
+    return minutes
+
+
+def _save_stall_minutes(minutes, silent_minutes):
     data = load_local_settings(LOCAL_SETTINGS_PATH)
     data['stall_minutes'] = minutes
-    data['stall_kill_chrome'] = kill_chrome
-    data['page_not_loaded_close'] = page_close
+    data['open_grace_sec'] = silent_minutes * 60
+    data.pop('stall_kill_chrome', None)
+    data.pop('page_not_loaded_close', None)
     LOCAL_SETTINGS_PATH.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + '\n',
         encoding='utf-8',
     )
     settings.STALL_MINUTES = minutes
-    settings.STALL_KILL_CHROME = kill_chrome
-    settings.PAGE_NOT_LOADED_CLOSE = page_close
+    settings.OPEN_GRACE_SEC = silent_minutes * 60
 
 
 def _progress(run):

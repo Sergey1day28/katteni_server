@@ -8,7 +8,6 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from farm_core.agent_queue import enqueue_stop_chrome
 from farm_core.circle import confirm_opened, finish_entry, stop_run, _active_entry
 from farm_core.event_log import log_event
 from farm_core.metrics import put_daily_metric
@@ -31,7 +30,7 @@ from farm_core.models import (
     SnipeSettingsDoc,
 )
 from farm_core.sbc import record_attempt
-from farm_core.workers import ensure_configured_worker
+from farm_core.telegram_send import send_auto_buy
 
 
 class ApiError(Exception):
@@ -176,7 +175,7 @@ def session_finish(body):
         return {'action': session.finish_action or 'close_browser'}
     reason = body.get('reason') or 'done'
     target_email = (session.email if session else email) or ''
-    keep = reason == 'page_not_loaded' and not getattr(settings, 'PAGE_NOT_LOADED_CLOSE', False)
+    keep = reason == 'page_not_loaded'
     action = 'keep_open' if keep else 'close_browser'
     log_event(
         'Аккаунт %s закончил сессию: %s, %s'
@@ -373,6 +372,19 @@ def snipe_settings_save(body):
     return {'version': doc.version}
 
 
+def _deliver_auto_buy(outbox, text):
+    if outbox.state == NotifyOutbox.STATE_SENT:
+        return
+    if outbox.text != text or outbox.channel != 'auto_buy':
+        outbox.text = text
+        outbox.channel = 'auto_buy'
+        outbox.save(update_fields=['text', 'channel'])
+    if send_auto_buy(text):
+        outbox.state = NotifyOutbox.STATE_SENT
+        outbox.sent_at = timezone.now()
+        outbox.save(update_fields=['state', 'sent_at'])
+
+
 def notify(body):
     channel = body.get('channel') or 'important'
     text = body.get('text') or ''
@@ -383,10 +395,12 @@ def notify(body):
     if email:
         text = '%s %s' % (email, text)
     key = body.get('dedup_key') or ('notify-%s-%s' % (channel, timezone.now().timestamp()))
-    NotifyOutbox.objects.get_or_create(
+    outbox, _created = NotifyOutbox.objects.get_or_create(
         dedup_key=str(key)[:80],
         defaults={'channel': channel, 'text': text},
     )
+    if channel == 'auto_buy':
+        _deliver_auto_buy(outbox, text)
     return {'queued': True}
 
 
@@ -420,8 +434,6 @@ def mark_stalled(now=None):
     for group in by_run.values():
         run = group[0].run
         stop_run(run)
-        if getattr(settings, 'STALL_KILL_CHROME', False):
-            enqueue_stop_chrome(ensure_configured_worker(), run=run)
         for entry in group:
             reason = _stall_reason(entry, minutes)
             log_event(

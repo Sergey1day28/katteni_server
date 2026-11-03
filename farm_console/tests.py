@@ -46,32 +46,32 @@ class ConsoleTests(TestCase):
     def test_экран_фермы_сохраняет_порог_зависания(self):
         previous = (
             getattr(settings, 'STALL_MINUTES', 5),
-            getattr(settings, 'STALL_KILL_CHROME', False),
-            getattr(settings, 'PAGE_NOT_LOADED_CLOSE', False),
+            getattr(settings, 'OPEN_GRACE_SEC', 120),
         )
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / 'farm.local.json'
-            path.write_text(json.dumps({
-                'stall_minutes': 5,
-                'stall_kill_chrome': False,
-                'page_not_loaded_close': False,
-            }), encoding='utf-8')
+            path.write_text(json.dumps({'stall_minutes': 5}), encoding='utf-8')
             try:
                 with patch('farm_console.views.LOCAL_SETTINGS_PATH', path):
                     response = self.client.post('/farm/', {
                         'action': 'stall',
                         'stall_minutes': '7',
-                        'stall_kill_chrome': '1',
+                        'silent_minutes': '3',
                     })
                 saved = json.loads(path.read_text(encoding='utf-8'))
+                page = self.client.get('/farm/')
             finally:
                 settings.STALL_MINUTES = previous[0]
-                settings.STALL_KILL_CHROME = previous[1]
-                settings.PAGE_NOT_LOADED_CLOSE = previous[2]
+                settings.OPEN_GRACE_SEC = previous[1]
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Порог зависания сохранён')
         self.assertEqual(saved['stall_minutes'], 7)
-        self.assertTrue(saved['stall_kill_chrome'])
+        self.assertEqual(saved['open_grace_sec'], 180)
+        self.assertNotIn('stall_kill_chrome', saved)
+        self.assertNotIn('page_not_loaded_close', saved)
+        self.assertNotContains(page, 'Гасить Chrome')
+        self.assertNotContains(page, 'Закрывать профиль')
+        self.assertContains(page, 'name="silent_minutes"')
 
     def test_карточка_папки_удаляет_папку(self):
         folder = Folder.objects.create(name='Свои', filter=default_filter())

@@ -23,6 +23,5 @@
   },
   "heartbeat_sec": 60,
   "stall_minutes": 5,
-  "stall_kill_chrome": false,
-  "page_not_loaded_close": false
+  "open_grace_sec": 120
 }

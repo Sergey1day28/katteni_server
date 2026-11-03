@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pyotp
 from django.test import TestCase
@@ -98,6 +99,21 @@ class ApiV1Tests(TestCase):
         })
         self.assertTrue(response.json()['ok'])
         self.assertTrue(NotifyOutbox.objects.filter(dedup_key='page-a@b.com').exists())
+
+    def test_notify_auto_buy_уходит_в_телеграм(self):
+        sent = []
+        with patch('farm_core.bot_api.send_auto_buy', side_effect=lambda text: sent.append(text) or True):
+            response = self._post('notify', {
+                'email': 'a@b.com',
+                'channel': 'auto_buy',
+                'text': 'не удалось прогрузить',
+                'dedup_key': 'page-a@b.com',
+            })
+        self.assertTrue(response.json()['ok'])
+        self.assertEqual(sent, ['a@b.com не удалось прогрузить'])
+        note = NotifyOutbox.objects.get(dedup_key='page-a@b.com')
+        self.assertEqual(note.channel, 'auto_buy')
+        self.assertEqual(note.state, NotifyOutbox.STATE_SENT)
 
     def test_credentials_отдаёт_email(self):
         start_folder(self.folder, worker=self.worker)

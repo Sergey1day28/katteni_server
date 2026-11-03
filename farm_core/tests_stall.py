@@ -19,7 +19,7 @@ from farm_core.models import (
 from farm_core.tokens import hash_token
 
 
-@override_settings(STALL_KILL_CHROME=False, STALL_MINUTES=5, PAGE_NOT_LOADED_CLOSE=False)
+@override_settings(STALL_MINUTES=5)
 class StallTests(TestCase):
     def setUp(self):
         self.folder = Folder.objects.create(name='Свои', filter=default_filter())
@@ -72,7 +72,6 @@ class StallTests(TestCase):
         self.assertIn('команда открытия без итога', captured.output[0])
 
 
-@override_settings(PAGE_NOT_LOADED_CLOSE=False)
 class StallEventTests(TestCase):
     def setUp(self):
         self.worker = Worker.objects.create(
@@ -98,9 +97,10 @@ class StallEventTests(TestCase):
             on_command_finished(command)
         self.assertIn('не открылся: не найден ярлык', captured.output[0])
 
-    def test_страница_не_загрузилась_пишется_в_журнал(self):
+    def test_страница_не_загрузилась_оставляет_профиль(self):
         with self.assertLogs('farm_journal', level='INFO') as captured:
-            session_finish({'email': 'a@b.com', 'reason': 'page_not_loaded'})
+            result = session_finish({'email': 'a@b.com', 'reason': 'page_not_loaded'})
+        self.assertEqual(result['action'], 'keep_open')
         self.assertIn('page_not_loaded', captured.output[0])
         self.assertIn('оставлю открытым', captured.output[0])
 
