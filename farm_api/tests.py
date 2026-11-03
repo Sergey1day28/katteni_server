@@ -180,6 +180,22 @@ class ApiV1Tests(TestCase):
         self.assertEqual(pending.balance, 1200)
         self.assertEqual(Account.objects.filter(email='csv@x.com').count(), 1)
 
+    def test_bind_сохраняет_ea_id_длиннее_32_бит(self):
+        pending = Account.objects.create(email='wide@x.com', name='Wide')
+        session = self._start_run_session('wide@x.com')
+        wide_id = 3_000_000_000
+        response = self._post('session/bind', {
+            'session': session,
+            'ea_account_id': wide_id,
+            'account_name': 'Wide',
+            'coins': 500,
+        })
+        self.assertTrue(response.json()['ok'], response.json())
+        pending.refresh_from_db()
+        self.assertEqual(pending.ea_account_id, wide_id)
+        self.assertEqual(pending.balance, 500)
+        self.assertIsNotNone(pending.linked_at)
+
     def test_bind_не_плодит_дубль_если_id_уже_есть(self):
         session = self._start_run_session('a@b.com', 10011)
         response = self._post('session/bind', {

@@ -17,7 +17,7 @@ class Worker(models.Model):
 
 
 class Account(models.Model):
-    ea_account_id = models.IntegerField(unique=True, null=True, blank=True)
+    ea_account_id = models.BigIntegerField(unique=True, null=True, blank=True)
     name = models.CharField(max_length=150, blank=True)
     email = models.CharField(max_length=254, null=True, blank=True)
     ban = models.BooleanField(default=False)
