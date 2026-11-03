@@ -42,6 +42,7 @@ class AccountLoginSecret(models.Model):
     account = models.OneToOneField(Account, on_delete=models.CASCADE, related_name='login_secret')
     code_reserves = models.CharField(max_length=150, blank=True)
     totp_seed = models.CharField(max_length=150, blank=True)
+    ea_password = models.CharField(max_length=150, blank=True)
 
 
 class DailyMetric(models.Model):

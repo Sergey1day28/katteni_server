@@ -147,6 +147,7 @@ def session_credentials(body):
     return {
         'email': session.email or (account.email if account is not None else ''),
         'code_ea': _code_ea(secret),
+        'ea_password': (secret.ea_password if secret is not None else '') or '',
     }
 
 

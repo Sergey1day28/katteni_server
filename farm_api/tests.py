@@ -127,6 +127,7 @@ class ApiV1Tests(TestCase):
         self.assertTrue(response.json()['ok'])
         self.assertEqual(response.json()['data']['email'], 'a@b.com')
         self.assertIn('code_ea', response.json()['data'])
+        self.assertEqual(response.json()['data']['ea_password'], '')
 
     def test_рынок_чтение_форма_как_в_контракте(self):
         expected = json.loads((CONTRACT / 'market-filters.ok.json').read_text(encoding='utf-8'))
@@ -262,9 +263,14 @@ class ApiV1Tests(TestCase):
     def test_credentials_по_email_без_id_отдаёт_totp(self):
         pending = Account.objects.create(email='csv@x.com')
         seed = 'JBSWY3DPEHPK3PXP'
-        AccountLoginSecret.objects.create(account=pending, totp_seed=seed)
+        AccountLoginSecret.objects.create(
+            account=pending,
+            totp_seed=seed,
+            ea_password='secret-pass',
+        )
         session = self._start_run_session('csv@x.com')
         response = self._post('session/credentials', {'session': session})
         self.assertTrue(response.json()['ok'])
         self.assertEqual(response.json()['data']['email'], 'csv@x.com')
+        self.assertEqual(response.json()['data']['ea_password'], 'secret-pass')
         self.assertTrue(pyotp.TOTP(seed).verify(response.json()['data']['code_ea'], valid_window=1))

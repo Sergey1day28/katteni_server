@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import tempfile
 from datetime import date, timedelta
@@ -115,10 +114,28 @@ class PersistTests(TestCase):
             self.assertEqual(account.name, 'CSV')
             secret = AccountLoginSecret.objects.get(account=account)
             self.assertEqual(secret.totp_seed, 'JBSWY3DPEHPK3PXP')
-            self.assertNotIn('secret-pass', json.dumps(secret.__dict__, default=str))
+            self.assertEqual(secret.ea_password, 'secret-pass')
             self.assertEqual(first.summary['accounts'], 1)
             self.assertEqual(second.summary['accounts'], 1)
             self.assertEqual(first.unresolved, [])
+
+    def test_csv_пустой_пароль_не_затирает(self):
+        with tempfile.TemporaryDirectory() as raw:
+            folder = Path(raw)
+            first_path = folder / 'with-pass.csv'
+            first_path.write_text(
+                'email,password\nkeep@x.com,keep-pass\n',
+                encoding='utf-8',
+            )
+            import_csv(first_path)
+            second_path = folder / 'empty-pass.csv'
+            second_path.write_text(
+                'email,password\nkeep@x.com,\n',
+                encoding='utf-8',
+            )
+            import_csv(second_path)
+            account = Account.objects.get(email='keep@x.com')
+            self.assertEqual(account.login_secret.ea_password, 'keep-pass')
 
     def test_csv_позиционный_как_лист_акки_еа(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -132,6 +149,7 @@ class PersistTests(TestCase):
             account = Account.objects.get(email='pos@x.com')
             self.assertIsNone(account.ea_account_id)
             self.assertEqual(account.login_secret.totp_seed, 'JBSWY3DPEHPK3PXP')
+            self.assertEqual(account.login_secret.ea_password, 'discard-pass')
             self.assertEqual(report.unresolved, [])
 
     def test_csv_заголовок_name_не_становится_аккаунтом(self):

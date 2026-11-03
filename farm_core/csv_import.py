@@ -12,7 +12,16 @@ NAME_KEYS = frozenset({'name', 'account_name', 'имя'})
 EA_ID_KEYS = frozenset({'ea_account_id', 'account_id', 'ea_id'})
 PASSWORD_KEYS = frozenset({'password', 'ea_password', 'pass', 'пароль'})
 SHEET_EMAIL_COL = 0
+SHEET_PASSWORD_COL = 6
 SHEET_TOTP_COL = 10
+
+
+def _sheet_mapping():
+    return {
+        'email': SHEET_EMAIL_COL,
+        'password': SHEET_PASSWORD_COL,
+        'totp': SHEET_TOTP_COL,
+    }
 
 
 def import_csv(csv_path=None, uploaded=None):
@@ -38,11 +47,11 @@ def _import_rows(rows, source_name):
         data_rows = rows[1:]
         start_line = 2
     elif header_map:
-        mapping = {'email': SHEET_EMAIL_COL, 'totp': SHEET_TOTP_COL}
+        mapping = _sheet_mapping()
         data_rows = rows[1:]
         start_line = 2
     else:
-        mapping = {'email': SHEET_EMAIL_COL, 'totp': SHEET_TOTP_COL}
+        mapping = _sheet_mapping()
         data_rows = rows
         start_line = 1
     for offset, row in enumerate(data_rows):
@@ -161,10 +170,16 @@ def _upsert_row(row, mapping, line, unresolved):
             name=name,
             ea_account_id=ea_id,
         )
+    password = _cell(row, mapping.get('password'))
+    defaults = {}
     if totp:
+        defaults['totp_seed'] = totp
+    if password:
+        defaults['ea_password'] = password
+    if defaults:
         AccountLoginSecret.objects.update_or_create(
             account=account,
-            defaults={'totp_seed': totp},
+            defaults=defaults,
         )
     logging.info('Импорт CSV: аккаунт %s', email)
     return True

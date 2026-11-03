@@ -17,6 +17,7 @@ class AccountAdmin(admin.ModelAdmin):
 @admin.register(AccountLoginSecret)
 class AccountLoginSecretAdmin(admin.ModelAdmin):
     list_display = ('account',)
+    exclude = ('ea_password',)
 
 
 @admin.register(AgentCommand)
