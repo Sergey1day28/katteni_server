@@ -1,10 +1,11 @@
 {% extends "farm_console/base.html" %}
+{% load humanize %}
 {% block title %}{{ account.email }}{% endblock %}
 {% block refresh %}<meta http-equiv="refresh" content="60">{% endblock %}
 {% block content %}
 <h1>{{ account.email|default:account.name }}</h1>
 {% if message %}<div class="msg">{{ message }}</div>{% endif %}
-<p class="muted">EA {{ account.ea_account_id|default_if_none:"ещё нет" }} · связь {% if account.linked_at %}{{ account.linked_at }}{% else %}не было{% endif %} · рынок {% if account.market_open == True %}открыт{% elif account.market_open == False %}закрыт{% else %}нет данных{% endif %} · бан {{ account.ban }} · снайп {{ account.snipe_allowed }} · баланс {{ account.balance }}</p>
+<p class="muted">EA {{ account.ea_account_id|default_if_none:"ещё нет" }} · связь {% if account.linked_at %}{{ account.linked_at }}{% else %}не было{% endif %} · рынок {% if account.market_open == True %}открыт{% elif account.market_open == False %}закрыт{% else %}нет данных{% endif %} · бан {{ account.ban }} · снайп {{ account.snipe_allowed }} · баланс {{ account.balance|intcomma }}</p>
 <p>Набор СБЧ: {% if assignment %}<strong>{{ assignment.sbc_set.name }}</strong>{% else %}нет{% endif %}
 {% if assignment %}
 <form method="post" style="display:inline">{% csrf_token %}

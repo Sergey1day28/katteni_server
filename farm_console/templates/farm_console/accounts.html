@@ -5,33 +5,34 @@
 <div class="card" id="accounts-search" data-search-url="{% url 'farm-accounts-search' %}" data-open-url="{% url 'farm-accounts-open' %}" data-close-url="{% url 'farm-accounts-close' %}" data-delete-url="{% url 'farm-accounts-delete' %}">
   {% csrf_token %}
   <div id="accounts-open-msg"></div>
-  <p class="muted">Поиск</p>
-  <ul class="list" id="filter-chips"></ul>
-  <p class="row">
-    <details class="filter-add">
-      <summary>Фильтр</summary>
-      <div class="filter-picker">
-        {% for item in filter_presets %}
-          <button type="button" data-filter-key="{{ item.key }}" data-filter-title="{{ item.title }}">{{ item.title }}</button>
-        {% endfor %}
-      </div>
-    </details>
-    <details class="filter-add">
-      <summary>Папка</summary>
-      <div class="filter-picker">
-        {% for folder in folders %}
-          <button type="button" data-filter-key="in_folder" data-filter-title="{{ folder.name }}" data-filter-extra="{{ folder.id }}">{{ folder.name }}</button>
-        {% empty %}
-          <span class="muted">папок нет</span>
-        {% endfor %}
-      </div>
-    </details>
-    <button type="button" class="btn-primary" id="filter-search">Искать</button>
-  </p>
-  <p class="row">
-    <input id="email-query" placeholder="email" size="32">
-    <button type="button" id="email-search">Искать</button>
-  </p>
+  <details class="filter-add" id="accounts-search-panel">
+    <summary>Поиск</summary>
+    <ul class="list" id="filter-chips"></ul>
+    <p class="row">
+      <details class="filter-add" open>
+        <summary>Фильтр</summary>
+        <div class="filter-picker">
+          {% for item in filter_presets %}
+            <button type="button" data-filter-key="{{ item.key }}" data-filter-title="{{ item.title }}">{{ item.title }}</button>
+          {% endfor %}
+        </div>
+      </details>
+      <details class="filter-add" open>
+        <summary>Папка</summary>
+        <div class="filter-picker">
+          {% for folder in folders %}
+            <button type="button" data-filter-key="in_folder" data-filter-title="{{ folder.name }}" data-filter-extra="{{ folder.id }}">{{ folder.name }}</button>
+          {% empty %}
+            <span class="muted">папок нет</span>
+          {% endfor %}
+        </div>
+      </details>
+    </p>
+    <p class="row">
+      <input id="email-query" placeholder="email" size="32">
+      <button type="button" class="btn-primary" id="filter-search">Искать</button>
+    </p>
+  </details>
   <div id="accounts-found">
     {% include "farm_console/accounts_found.html" %}
   </div>
@@ -164,9 +165,15 @@
   });
 
   document.getElementById('filter-search').addEventListener('click', function () {
-    if (!chips.length) return;
+    var email = (emailInput.value || '').trim();
+    if (!chips.length && !email) return;
     var data = new FormData();
     data.append('csrfmiddlewaretoken', token ? token.value : '');
+    if (email) {
+      data.append('email', email);
+      runSearch(data);
+      return;
+    }
     chips.forEach(function (item) {
       data.append('filter_key', item.key);
       if (item.extra) data.append('extra_' + item.key, item.extra);
@@ -186,7 +193,6 @@
     runSearch(data);
   }
 
-  document.getElementById('email-search').addEventListener('click', searchEmail);
   emailInput.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {
       event.preventDefault();

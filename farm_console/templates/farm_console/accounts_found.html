@@ -1,3 +1,4 @@
+{% load humanize %}
 {% if found %}
 <p class="row">
   <label><input type="checkbox" id="pick-all"> Выбрать все</label>
@@ -12,7 +13,7 @@
   <tr>
     <td><input type="checkbox" name="account_id" value="{{ account.id }}"></td>
     <td><a href="{% url 'farm-account' account.id %}">{% include "farm_console/account_status.html" %}</a></td>
-    <td>{{ account.balance }}</td>
+    <td>{{ account.balance|intcomma }}</td>
     <td>
       {% if account.sbc_set_name %}
         {{ account.sbc_set_name }}

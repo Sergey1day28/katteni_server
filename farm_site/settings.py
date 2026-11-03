@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',
     'farm_core.apps.FarmCoreConfig',
     'farm_agent_api.apps.FarmAgentApiConfig',
     'farm_api.apps.FarmApiConfig',
